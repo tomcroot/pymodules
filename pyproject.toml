@@ -1,0 +1,54 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pymodules"
+version = "0.1.0"
+description = "Laravel-modules inspired modular architecture for Python — framework agnostic."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+keywords = ["modules", "modular", "django", "flask", "fastapi", "architecture"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+dependencies = [
+    "click>=8.0",
+]
+
+[project.optional-dependencies]
+django = ["django>=4.0"]
+flask  = ["flask>=2.0"]
+fastapi = ["fastapi>=0.95"]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov",
+    "django>=4.0",
+    "flask>=2.0",
+    "fastapi>=0.95",
+]
+
+[project.scripts]
+pymodules = "pymodules.commands.cli:cli"
+
+[project.urls]
+Homepage = "https://github.com/yourname/pymodules"
+Repository = "https://github.com/yourname/pymodules"
+Issues = "https://github.com/yourname/pymodules/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["pymodules"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
