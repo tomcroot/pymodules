@@ -121,7 +121,10 @@ pip install "pytmodules[django] @ git+https://github.com/tomcroot/pymodules.git"
 
 ## Release Process
 
-PyPI publishing is handled by GitHub Actions in [.github/workflows/publish.yml](.github/workflows/publish.yml).
+Releases are automated with GitHub Actions:
+
+- [.github/workflows/release.yml](.github/workflows/release.yml) (manual trigger) bumps version files, creates/pushes a `v*` tag, and creates the GitHub Release.
+- [.github/workflows/publish.yml](.github/workflows/publish.yml) runs on tag push (`v*`), builds artifacts, runs `twine check`, and publishes to PyPI via trusted publishing.
 
 Local validation before cutting a release:
 
@@ -132,12 +135,12 @@ python -m twine check dist/*
 
 Release flow:
 
-1. Update versioned docs such as `CHANGELOG.md`.
-2. Create and push a version tag such as `v0.1.0`.
-3. Publish a GitHub Release for that tag.
-4. The publish workflow builds the sdist and wheel, verifies them with `twine check`, and uploads to PyPI.
+1. Ensure `CHANGELOG.md` has release-ready notes under `[Unreleased]`.
+2. Run the **Release** workflow from GitHub Actions (`workflow_dispatch`) and provide the version (for example, `0.1.1`).
+3. The workflow updates version metadata, commits, tags (`v0.1.1`), and creates the GitHub Release.
+4. Tag push automatically triggers the publish workflow, which builds and uploads to PyPI.
 
-The workflow is configured for PyPI trusted publishing. Before the first live release, add this GitHub repository and workflow as a trusted publisher in the PyPI project settings.
+The publish workflow is configured for PyPI trusted publishing. Keep the GitHub `pypi` environment and PyPI trusted publisher settings in sync if repository, workflow, or environment names change.
 
 ---
 

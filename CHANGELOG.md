@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Release automation now uses `.github/workflows/release.yml` for version bump + tag + GitHub Release creation.
+- Publishing now runs from `.github/workflows/publish.yml` on `v*` tag pushes (with `workflow_dispatch` retained as manual fallback).
+
 ---
 
 ## [0.1.0] - 2026-03-19
