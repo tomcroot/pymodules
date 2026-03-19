@@ -129,9 +129,10 @@ class Command(BaseCommand):
                 ]
             )
 
+        imports_block = "\n".join(imports)
         return f'''\
 """Model for the {module_name} module — {model_name}."""
-{"\n".join(imports)}
+{imports_block}
 
 
 {class_def}
