@@ -38,6 +38,10 @@ jobs:
           retention-days: 1
 
   publish:
+    # Only publish on an actual GitHub Release event — not on workflow_dispatch.
+    # workflow_dispatch is intentionally limited to build + check so you can
+    # validate artifacts without deploying.
+    if: github.event_name == 'release'
     needs: build
     runs-on: ubuntu-latest
     permissions:
