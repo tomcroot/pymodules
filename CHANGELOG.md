@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [0.1.1] - 2026-03-19
+
 ### Changed
 
 - Release automation now uses `.github/workflows/release.yml` for version bump + tag + GitHub Release creation.
@@ -57,5 +61,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Asset publishing system
 - Python 3.10, 3.11, 3.12, 3.13 support
 
-[Unreleased]: https://github.com/tomcroot/pymodules/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/tomcroot/pymodules/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/tomcroot/pymodules/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/tomcroot/pymodules/releases/tag/v0.1.0

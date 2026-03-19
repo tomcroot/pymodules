@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pytmodules"
-version = "0.1.0"
+version = "0.1.1"
 description = "Laravel-modules inspired modular architecture for Python — framework agnostic."
 readme = "README.md"
 requires-python = ">=3.10"
