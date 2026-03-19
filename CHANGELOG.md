@@ -11,6 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.1.2] - {placeholder}
+
+### Changed
+
+- Publish workflow now auto-chains from Release workflow via `workflow_run`, eliminating the need for manual publish dispatch after each release.
+
+---
+
 ## [0.1.1] - 2026-03-19
 
 ### Changed

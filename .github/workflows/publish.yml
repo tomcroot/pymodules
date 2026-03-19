@@ -1,15 +1,17 @@
 name: Publish
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Triggered automatically when a v* tag is pushed (i.e. after release.yml
-# creates the tag). Also supports manual workflow_dispatch as a re-publish
-# fallback if a publish fails mid-flight.
+# Triggered automatically when the Release workflow completes successfully.
+# Also supports manual workflow_dispatch as a re-publish fallback.
+#
+# Note: we use workflow_run (not push: tags) because GITHUB_TOKEN-pushed tags
+# cannot trigger other workflow runs — a GitHub Actions security restriction.
 # ─────────────────────────────────────────────────────────────────────────────
 
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
   workflow_dispatch:
 
 # Restrict default token permissions; each job grants only what it needs.
@@ -21,12 +23,15 @@ env:
 
 jobs:
   build:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: read
 
     steps:
       - uses: actions/checkout@v4.2.2
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || '' }}
 
       - uses: actions/setup-python@v5.3.0
         with:
@@ -60,8 +65,9 @@ jobs:
 
     steps:
       - name: Check out repository
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
         uses: actions/checkout@v4.2.2
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || '' }}
 
       - name: Download distributions
         uses: actions/download-artifact@v4.1.8
@@ -69,22 +75,22 @@ jobs:
           name: python-package-distributions
           path: dist/
 
-      - name: Ensure GitHub Release exists (tag pushes)
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+      - name: Ensure GitHub Release exists
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="${GITHUB_REF#refs/tags/}"
-          VERSION="${TAG#v}"
+          VERSION=$(python3 -c "import re; m=re.search(r'version = \"(.+?)\"', open('pyproject.toml').read()); print(m.group(1))")
+          export VERSION
+          TAG="v${VERSION}"
 
           if gh release view "$TAG" >/dev/null 2>&1; then
             exit 0
           fi
 
           python3 - <<'EOF'
-          import re
+          import re, os
 
-          version = "${VERSION}"
+          version = os.environ["VERSION"]
           with open("CHANGELOG.md") as f:
               content = f.read()
 
