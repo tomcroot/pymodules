@@ -15,6 +15,10 @@ on:
 # Restrict default token permissions; each job grants only what it needs.
 permissions: {}
 
+# Opt in to Node.js 24 for all actions ahead of the June 2026 forced cutover.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
