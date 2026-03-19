@@ -1,4 +1,11 @@
-name: Publish
+name: Publish (manual re-publish)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Fallback workflow for manually re-publishing an existing release to PyPI.
+# Normal releases are fully automated via release.yml (workflow_dispatch).
+# Use this only if a PyPI publish failed mid-flight and needs to be retried
+# from an already-tagged release.
+# ─────────────────────────────────────────────────────────────────────────────
 
 on:
   release:

@@ -1,0 +1,171 @@
+name: Release
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Trigger this workflow from the GitHub Actions tab.
+# It will:
+#   1. Bump the version in pyproject.toml and CHANGELOG.md
+#   2. Commit + tag + push to main
+#   3. Create a GitHub Release with changelog notes
+#   4. Build and verify the distributions
+#   5. Publish to PyPI via trusted publishing (OIDC)
+# ─────────────────────────────────────────────────────────────────────────────
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (e.g. 0.2.0)"
+        required: true
+        type: string
+      prerelease:
+        description: "Mark as pre-release"
+        type: boolean
+        default: false
+
+permissions: {}
+
+jobs:
+  # ──────────────────────────────────────────────
+  # Job 1: bump files, commit, tag, GitHub Release
+  # ──────────────────────────────────────────────
+  tag-and-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump version in pyproject.toml
+        run: sed -i 's/^version = ".*"/version = "${{ inputs.version }}"/' pyproject.toml
+
+      - name: Update CHANGELOG.md
+        run: |
+          python3 - <<'EOF'
+          import re
+          from datetime import date
+
+          version = "${{ inputs.version }}"
+          today = date.today().isoformat()
+
+          with open("CHANGELOG.md") as f:
+              content = f.read()
+
+          # Insert new version section after ## [Unreleased]
+          content = re.sub(
+              r"(## \[Unreleased\]\n)",
+              f"\\1\n---\n\n## [{version}] - {today}\n",
+              content,
+              count=1,
+          )
+
+          # Update footer comparison links
+          m = re.search(r"\[Unreleased\]: .+/compare/v(.+?)\.\.\.HEAD", content)
+          if m:
+              old_ver = m.group(1)
+              content = re.sub(
+                  r"\[Unreleased\]: .+/compare/v.+?\.\.\.HEAD",
+                  (
+                      f"[Unreleased]: https://github.com/tomcroot/pymodules/compare/v{version}...HEAD\n"
+                      f"[{version}]: https://github.com/tomcroot/pymodules/compare/v{old_ver}...v{version}"
+                  ),
+                  content,
+              )
+
+          with open("CHANGELOG.md", "w") as f:
+              f.write(content)
+          EOF
+
+      - name: Commit version bump
+        run: |
+          git add pyproject.toml CHANGELOG.md
+          git commit -m "Release v${{ inputs.version }}"
+          git push
+
+      - name: Create and push tag
+        run: |
+          git tag "v${{ inputs.version }}"
+          git push origin "v${{ inputs.version }}"
+
+      - name: Extract changelog notes for this release
+        run: |
+          python3 - <<'EOF'
+          import re
+
+          version = "${{ inputs.version }}"
+          with open("CHANGELOG.md") as f:
+              content = f.read()
+
+          m = re.search(
+              rf"## \[{re.escape(version)}\][^\n]*\n(.*?)(?=\n---\n|\n## \[|\Z)",
+              content,
+              re.DOTALL,
+          )
+          notes = m.group(1).strip() if m else f"See CHANGELOG.md for details."
+          with open("release_notes.md", "w") as f:
+              f.write(notes)
+          EOF
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          FLAGS="--title v${{ inputs.version }} --notes-file release_notes.md"
+          [ "${{ inputs.prerelease }}" = "true" ] && FLAGS="$FLAGS --prerelease"
+          gh release create "v${{ inputs.version }}" $FLAGS
+
+  # ──────────────────────────────────────────────
+  # Job 2: build and verify distributions
+  # ──────────────────────────────────────────────
+  build:
+    needs: tag-and-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      # Check out the tagged commit so the version in pyproject.toml is correct.
+      - uses: actions/checkout@v4.2.2
+        with:
+          ref: "v${{ inputs.version }}"
+
+      - uses: actions/setup-python@v5.3.0
+        with:
+          python-version: "3.13"
+
+      - name: Build and verify distributions
+        run: |
+          pip install --upgrade build twine
+          python -m build
+          twine check dist/*
+
+      - uses: actions/upload-artifact@v4.4.3
+        with:
+          name: python-package-distributions
+          path: dist/
+          retention-days: 1
+
+  # ──────────────────────────────────────────────
+  # Job 3: publish to PyPI via OIDC trusted publishing
+  # ──────────────────────────────────────────────
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    environment:
+      name: pypi
+      url: https://pypi.org/p/pytmodules
+
+    steps:
+      - uses: actions/download-artifact@v4.1.8
+        with:
+          name: python-package-distributions
+          path: dist/
+
+      - uses: pypa/gh-action-pypi-publish@release/v1
