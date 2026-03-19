@@ -496,15 +496,18 @@ def publish_module(ctx: click.Context, name: str | None, group: str, force: bool
 def list_presets() -> None:
     """List all available scaffold presets."""
     rows = {
-        "plain":   "module.json + __init__.py only",
-        "default": "Framework-agnostic: providers, config, tests",
-        "django":  "Django: models, views, apps.py, admin, serializers, migrations",
-        "fastapi": "FastAPI: APIRouter, Pydantic schemas, service layer",
-        "flask":   "Flask: Blueprint, service layer",
+        "plain":        "module.json + __init__.py only",
+        "default":      "Framework-agnostic: providers, config, tests",
+        "django":       "Django: models, HTML views, admin, migrations",
+        "django-api":   "Django REST: DRF ViewSet, Serializer, DefaultRouter, api/urls.py",
+        "fastapi":      "FastAPI: APIRouter, Pydantic schemas, service (3 endpoints)",
+        "fastapi-crud": "FastAPI: full CRUD — list/get/create/update/delete (5 endpoints)",
+        "flask":        "Flask: Blueprint, service layer",
+        "flask-api":    "Flask REST: Blueprint full CRUD JSON API (5 endpoints)",
     }
     click.echo()
-    click.echo(f"  {'Preset':<12}  Description")
-    click.echo("  " + "─" * 58)
+    click.echo(f"  {'Preset':<16}  Description")
+    click.echo("  " + "─" * 70)
     for name, desc in rows.items():
-        click.echo(f"  {name:<12}  {desc}")
+        click.echo(f"  {name:<16}  {desc}")
     click.echo()

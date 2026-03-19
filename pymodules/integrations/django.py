@@ -20,6 +20,9 @@ Management commands available::
 
     python manage.py module_make <ModuleName>                                    # Create new module
     python manage.py module_make_model <ModuleName> <ModelName>                # Create lightweight model
+    python manage.py module_make_serializer <ModuleName> <ModelName>           # Create DRF serializers
+    python manage.py module_make_viewset <ModuleName> <ModelName>              # Create DRF ViewSet
+    python manage.py module_make_api_urls <ModuleName>                         # Create api/urls.py router wiring
     python manage.py module_make_model_migration <ModuleName> <ModelName>      # Create migration for specific model
     python manage.py module_make_migration <ModuleName>                        # Generate migrations for entire module
     python manage.py module_migrate [ModuleName]                               # Run migrations
@@ -32,6 +35,7 @@ urls.py::
     urlpatterns = [
         path("admin/", admin.site.urls),
         *settings.MODULE_REGISTRY.url_patterns(),
+        *settings.MODULE_REGISTRY.api_url_patterns(),
     ]
 
 Available manage.py commands once "pymodules" is in INSTALLED_APPS:
@@ -50,6 +54,7 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+import sys
 import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -113,6 +118,7 @@ class DjangoModuleRegistry(ModuleRegistry):
     Provides:
       - installed_apps()      → list for INSTALLED_APPS
       - url_patterns()        → list for urlpatterns
+            - api_url_patterns()    → list for API urlpatterns (api/urls.py)
       - migration_modules()   → dict for MIGRATION_MODULES
       - collect_settings()    → dict merged into Django settings
     """
@@ -120,6 +126,12 @@ class DjangoModuleRegistry(ModuleRegistry):
     # ------------------------------------------------------------------
     # INSTALLED_APPS
     # ------------------------------------------------------------------
+
+    def _ensure_modules_parent_on_path(self) -> None:
+        """Make module packages importable for dynamic module imports."""
+        parent = str(self.modules_root.parent)
+        if parent not in sys.path:
+            sys.path.insert(0, parent)
 
     def _enabled_modules_for_startup(self, context: str) -> list[Module]:
         """
@@ -153,6 +165,7 @@ class DjangoModuleRegistry(ModuleRegistry):
         return apps
 
     def _resolve_app_config(self, module: Module) -> str:
+        self._ensure_modules_parent_on_path()
         if module.has_file("apps.py"):
             try:
                 apps_mod = importlib.import_module(f"{module.import_path}.apps")
@@ -190,6 +203,7 @@ class DjangoModuleRegistry(ModuleRegistry):
         """
         from django.urls import include, path  # type: ignore[import]
 
+        self._ensure_modules_parent_on_path()
         patterns = []
         for module in self._enabled_modules_for_startup("urlpatterns"):
             if module.has_file("routes.py"):
@@ -202,6 +216,34 @@ class DjangoModuleRegistry(ModuleRegistry):
     # ------------------------------------------------------------------
     # Migrations
     # ------------------------------------------------------------------
+
+    def api_url_patterns(self, api_root: str = "api") -> list:
+        """
+        Collect REST API URL patterns from all enabled modules that define
+        ``api/urls.py``.
+
+        Each module api/urls.py can define:
+            api_prefix = "blog"     # optional, defaults to module name lowercased
+            urlpatterns = [...]
+
+        Usage::
+            urlpatterns = [
+                path("admin/", admin.site.urls),
+                *settings.MODULE_REGISTRY.url_patterns(),
+                *settings.MODULE_REGISTRY.api_url_patterns(),
+            ]
+        """
+        from django.urls import include, path  # type: ignore[import]
+
+        self._ensure_modules_parent_on_path()
+        patterns = []
+        for module in self._enabled_modules_for_startup("api urlpatterns"):
+            if module.has_file("api", "urls.py"):
+                mod = importlib.import_module(f"{module.import_path}.api.urls")
+                if hasattr(mod, "urlpatterns"):
+                    prefix = getattr(mod, "api_prefix", module.name.lower())
+                    patterns.append(path(f"{api_root}/{prefix}/", include(mod)))
+        return patterns
 
     def migration_modules(self) -> dict[str, str]:
         """

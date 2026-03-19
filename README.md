@@ -75,7 +75,7 @@ This is the **first public release** of pymodules. It is production-usable for g
 - Auto-detection of Django, FastAPI, Flask from your environment
 - `pymodules` CLI with `init`, `make`, `list`, `enable`, `disable`, `show`, `delete`, `publish`, `detect`, `presets`
 - Django `manage.py` integration (`module_make`, `module_list`, `module_enable`, `module_disable`, `module_show`, `module_delete`, `module_publish`)
-- Five scaffold presets: `plain`, `default`, `django`, `fastapi`, `flask`
+- Eight scaffold presets: `plain`, `default`, `django`, `django-api`, `fastapi`, `fastapi-crud`, `flask`, `flask-api`
 - Per-project config via `pymodules.toml`
 - Custom folder naming — call it `modules/`, `plugins/`, `apps/`, `src/features/` — anything
 - Module manifest (`module.json`) with versioning, enable/disable, provider registration
@@ -408,8 +408,25 @@ Blog/
   assets/
 ```
 
+### `django-api`
+Django REST module with DRF serializer, viewset, and router wiring.
+```
+Blog/
+    module.json, __init__.py, apps.py, providers.py
+    models/blog.py
+    serializers.py      ← DRF ModelSerializer + ListSerializer
+    viewsets.py         ← DRF ModelViewSet
+    api/urls.py         ← DefaultRouter wiring
+    routes.py           ← thin wrapper delegating to api/urls.py
+    admin.py
+    config/config.py
+    database/migrations/__init__.py
+    tests/test_blog.py
+    assets/
+```
+
 ### `fastapi`
-FastAPI module with full CRUD skeleton.
+FastAPI module with 3-endpoint API skeleton.
 ```
 Blog/
   module.json, __init__.py, providers.py
@@ -418,6 +435,18 @@ Blog/
   services.py     ← Service class (business logic layer)
   config/config.py
   tests/test_blog.py
+```
+
+### `fastapi-crud`
+FastAPI module with full CRUD endpoints.
+```
+Blog/
+    module.json, __init__.py, providers.py
+    routes.py       ← APIRouter with list/get/create/update/delete endpoints
+    schemas.py      ← Schema + CreateSchema + UpdateSchema
+    services.py     ← includes update() and delete() skeletons
+    config/config.py
+    tests/test_blog.py
 ```
 
 ### `flask`
@@ -429,6 +458,17 @@ Blog/
   services.py     ← Service class
   config/config.py
   tests/test_blog.py
+```
+
+### `flask-api`
+Flask module with JSON REST CRUD endpoints.
+```
+Blog/
+    module.json, __init__.py, providers.py
+    routes.py       ← /api/{module}/ CRUD Blueprint
+    services.py     ← all/create/find/update/delete skeletons
+    config/config.py
+    tests/test_blog.py
 ```
 
 ---
@@ -511,6 +551,7 @@ from django.conf import settings
 urlpatterns = [
     path("admin/", admin.site.urls),
     *settings.MODULE_REGISTRY.url_patterns(),   # auto-includes all module routes
+    *settings.MODULE_REGISTRY.api_url_patterns(),   # auto-includes /api/<module>/ routes
 ]
 ```
 
@@ -563,6 +604,9 @@ python manage.py module_publish Blog --group config
 python manage.py module_publish --force
 python manage.py module_make_model Blog Post
 python manage.py module_make_model Blog ArchivedPost --proxy --parent Post
+python manage.py module_make_serializer Blog Post
+python manage.py module_make_viewset Blog Post
+python manage.py module_make_api_urls Blog
 python manage.py module_make_model_migration Blog Post --auto-name
 python manage.py module_make_migration Blog
 python manage.py module_migrate Blog
@@ -835,12 +879,15 @@ from pymodules import (
 - [x] `plain` preset — `module.json` + `__init__.py`
 - [x] `default` preset — framework-agnostic with providers, config, tests
 - [x] `django` preset — models, views, apps.py, admin, serializers, migrations
+- [x] `django-api` preset — DRF serializer/viewset/router scaffolding
 - [x] `fastapi` preset — APIRouter, Pydantic schemas, service layer
+- [x] `fastapi-crud` preset — full CRUD APIRouter with update/delete skeletons
 - [x] `flask` preset — Blueprint, service layer
+- [x] `flask-api` preset — full JSON CRUD Blueprint scaffolding
 - [x] `{folder}` token in stubs — providers path always correct regardless of folder name
 
 **Django Integration**
-- [x] `DjangoModuleRegistry` — `installed_apps()`, `url_patterns()`, `migration_modules()`, `collect_settings()`
+- [x] `DjangoModuleRegistry` — `installed_apps()`, `url_patterns()`, `api_url_patterns()`, `migration_modules()`, `collect_settings()`
 - [x] `AppConfig` auto-detection from `apps.py`
 - [x] Module-level URL routing with custom `prefix`
 - [x] Module-level migrations via `MIGRATION_MODULES`
@@ -854,6 +901,9 @@ from pymodules import (
 - [x] `manage.py module_delete` — with `--yes` flag
 - [x] `manage.py module_publish` — with `--group`, `--force`
 - [x] `manage.py module_make_model` — lightweight per-file model scaffold
+- [x] `manage.py module_make_serializer` — DRF serializer scaffolding
+- [x] `manage.py module_make_viewset` — DRF ViewSet scaffolding
+- [x] `manage.py module_make_api_urls` — DRF router URL scaffolding
 - [x] `manage.py module_make_model_migration` — migration generation scoped to one model
 - [x] `manage.py module_make_migration` — module-scoped `makemigrations`
 - [x] `manage.py module_migrate` — module-scoped `migrate`

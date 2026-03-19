@@ -189,6 +189,28 @@ class TestDjangoModuleRegistry:
         assert apps == [module.import_path for module in registry.all_enabled()]
         assert any("could not resolve dependency order" in str(item.message) for item in caught)
 
+    def test_api_url_patterns_loads_module_api_urls(self, modules_dir):
+        blog_dir = modules_dir / "Blog"
+        blog_dir.mkdir(parents=True)
+        (blog_dir / "__init__.py").write_text("")
+        (blog_dir / "module.json").write_text(
+            json.dumps({"name": "Blog", "enabled": True})
+        )
+
+        api_dir = blog_dir / "api"
+        api_dir.mkdir(parents=True)
+        (api_dir / "__init__.py").write_text("")
+        (api_dir / "urls.py").write_text(
+            "from django.urls import path\n"
+            "api_prefix = 'blog'\n"
+            "urlpatterns = [path('', lambda request: None, name='index')]\n"
+        )
+
+        registry = DjangoModuleRegistry(modules_path=modules_dir)
+        patterns = registry.api_url_patterns()
+
+        assert len(patterns) == 1
+
     def test_all_enabled_ordered_raises_on_cycle(self, registry):
         for name, requires in [
             ("A", ["B"]),
@@ -263,6 +285,29 @@ class TestModuleGenerator:
         routes = (path / "routes.py").read_text()
         assert "from .views.blog_views import index, detail" in routes
         assert "path(\"\", index, name=\"index\")" in routes
+
+    def test_generate_django_api_preset_creates_api_scaffold(self, registry):
+        gen = ModuleGenerator(registry, preset="django-api")
+        path = gen.generate("Blog")
+
+        assert (path / "api" / "urls.py").exists()
+        assert (path / "viewsets.py").exists()
+        assert (path / "serializers.py").exists()
+
+    def test_generate_fastapi_crud_preset_has_update_delete_routes(self, registry):
+        gen = ModuleGenerator(registry, preset="fastapi-crud")
+        path = gen.generate("Blog")
+        routes = (path / "routes.py").read_text()
+
+        assert "@router.put(" in routes
+        assert "@router.delete(" in routes
+
+    def test_generate_flask_api_preset_has_api_prefix(self, registry):
+        gen = ModuleGenerator(registry, preset="flask-api")
+        path = gen.generate("Blog")
+        routes = (path / "routes.py").read_text()
+
+        assert "url_prefix=\"/api/blog\"" in routes
 
     def test_generate_duplicate_raises(self, registry):
         gen = ModuleGenerator(registry)
