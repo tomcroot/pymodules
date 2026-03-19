@@ -30,6 +30,7 @@
 - [Project Configuration — pymodules.toml](#project-configuration--pymodulestoml)
 - [API Reference](#api-reference)
 - [Feature Status](#feature-status)
+- [Release Process](#release-process)
 - [Roadmap to Industry Standard](#roadmap-to-industry-standard)
 - [Contributing](#contributing)
 - [License](#license)
@@ -96,6 +97,9 @@ pip install pymodules
 # With Django support
 pip install "pymodules[django]"
 
+# With Django + Django REST Framework scaffolding support
+pip install "pymodules[django-api]"
+
 # With Flask support
 pip install "pymodules[flask]"
 
@@ -106,7 +110,7 @@ pip install "pymodules[fastapi]"
 pip install "pymodules[django,flask,fastapi]"
 ```
 
-**From GitHub (before PyPI release):**
+**From GitHub (development installs):**
 
 ```bash
 pip install git+https://github.com/tomcroot/pymodules.git
@@ -114,6 +118,26 @@ pip install "pymodules[django] @ git+https://github.com/tomcroot/pymodules.git"
 ```
 
 **Requirements:** Python 3.10+
+
+## Release Process
+
+PyPI publishing is handled by GitHub Actions in [.github/workflows/publish.yml](.github/workflows/publish.yml).
+
+Local validation before cutting a release:
+
+```bash
+python -m build
+python -m twine check dist/*
+```
+
+Release flow:
+
+1. Update versioned docs such as `CHANGELOG.md`.
+2. Create and push a version tag such as `v0.1.0`.
+3. Publish a GitHub Release for that tag.
+4. The publish workflow builds the sdist and wheel, verifies them with `twine check`, and uploads to PyPI.
+
+The workflow is configured for PyPI trusted publishing. Before the first live release, add this GitHub repository and workflow as a trusted publisher in the PyPI project settings.
 
 ---
 
@@ -940,7 +964,7 @@ from pymodules import (
 
 ---
 
-### 📋 Needs to be done — Roadmap to Industry Standard
+## Roadmap to Industry Standard
 
 The following is what separates a useful personal tool from a package the Python community adopts as a standard.
 
@@ -981,13 +1005,13 @@ The following is what separates a useful personal tool from a package the Python
 - [ ] **100% line coverage** on core (`module.py`, `registry.py`, `generator.py`, `detector.py`)
 
 #### Distribution & Community
-- [ ] **PyPI release** — proper `twine` publish pipeline with signed releases
-- [ ] **GitHub Actions CI/CD** — lint → test matrix → build → publish on tag
-- [ ] **Changelog** — `CHANGELOG.md` following Keep a Changelog format
-- [ ] **Contributing guide** — how to add presets, integrations, CLI commands
+- [x] **PyPI release pipeline** — build + `twine check` + GitHub Actions publish workflow
+- [x] **GitHub Actions CI/CD** — test matrix plus release publish workflow
+- [x] **Changelog** — `CHANGELOG.md` following Keep a Changelog format
+- [x] **Contributing guide** — how to add presets, integrations, CLI commands
 - [ ] **Custom preset support** — let users define their own presets in `pymodules.toml` pointing to a local stubs directory
 - [ ] **Plugin API** — third-party packages can register new presets, CLI commands, and integrations via entry points
-- [ ] **Security policy** — `SECURITY.md`, responsible disclosure process
+- [x] **Security policy** — `SECURITY.md`, responsible disclosure process
 - [ ] **Benchmarks** — boot time with N modules, import overhead vs flat structure
 
 #### Production Readiness
