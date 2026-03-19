@@ -52,6 +52,7 @@ Available manage.py commands once "pymodules" is in INSTALLED_APPS:
 """
 from __future__ import annotations
 
+import inspect
 import importlib
 import importlib.util
 import sys
@@ -65,6 +66,9 @@ from ..module import Module
 
 if TYPE_CHECKING:
     pass
+
+
+_CACHE_UNSET = object()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -118,10 +122,17 @@ class DjangoModuleRegistry(ModuleRegistry):
     Provides:
       - installed_apps()      → list for INSTALLED_APPS
       - url_patterns()        → list for urlpatterns
-            - api_url_patterns()    → list for API urlpatterns (api/urls.py)
+      - api_url_patterns()    → list for API urlpatterns (api/urls.py)
       - migration_modules()   → dict for MIGRATION_MODULES
       - collect_settings()    → dict merged into Django settings
+      - collect_policies()    → dict of discovered DRF AccessPolicy classes
+      - get_policy()          → convenience lookup for one policy class
     """
+
+    def scan(self) -> None:
+        """Re-scan modules and invalidate derived caches."""
+        super().scan()
+        self.__dict__.pop("_policies_cache", None)
 
     # ------------------------------------------------------------------
     # INSTALLED_APPS
@@ -302,6 +313,68 @@ class DjangoModuleRegistry(ModuleRegistry):
                         if key.isupper():
                             merged[key] = val
         return merged
+
+    # ------------------------------------------------------------------
+    # DRF access policies
+    # ------------------------------------------------------------------
+
+    def collect_policies(self) -> dict[str, type]:
+        """
+        Collect DRF AccessPolicy subclasses from enabled modules.
+
+        Supports both a flat ``policies.py`` file and a ``policies/`` package.
+        Results are cached on first access and invalidated on ``scan()``.
+        """
+        cache = self.__dict__.get("_policies_cache", _CACHE_UNSET)
+        if cache is not _CACHE_UNSET:
+            return cache
+
+        AccessPolicy = self._require_access_policy()
+        self._ensure_modules_parent_on_path()
+
+        policies: dict[str, type] = {}
+        for module in self._enabled_modules_for_startup("policy collection"):
+            has_flat = module.has_file("policies.py")
+            has_package = module.has_file("policies", "__init__.py")
+            if not (has_flat or has_package):
+                continue
+
+            try:
+                self._clear_import_cache(module.import_path)
+                policies_mod = module.import_submodule("policies")
+            except Exception as exc:  # noqa: BLE001
+                warnings.warn(
+                    f"pymodules could not import policies for module {module.name!r}: {exc}",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
+                continue
+
+            for name, obj in inspect.getmembers(policies_mod, inspect.isclass):
+                if obj is AccessPolicy or not issubclass(obj, AccessPolicy):
+                    continue
+                if not obj.__module__.startswith(f"{module.import_path}.policies"):
+                    continue
+                policies[f"{obj.__module__}.{name}"] = obj
+
+        self.__dict__["_policies_cache"] = policies
+        return policies
+
+    def get_policy(self, dotted_path: str, default: type | None = None) -> type | None:
+        """Return one discovered policy class by dotted import path."""
+        return self.collect_policies().get(dotted_path, default)
+
+    def _require_access_policy(self):
+        try:
+            from rest_framework_access_policy import AccessPolicy
+        except ImportError as exc:
+            from django.core.exceptions import ImproperlyConfigured  # type: ignore[import]
+
+            raise ImproperlyConfigured(
+                "DjangoModuleRegistry.collect_policies() requires 'drf-access-policy'. "
+                'Install it with: pip install "pytmodules[django-api]"'
+            ) from exc
+        return AccessPolicy
 
 
 # ─────────────────────────────────────────────────────────────────────────────

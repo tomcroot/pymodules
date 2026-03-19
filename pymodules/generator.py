@@ -235,6 +235,35 @@ class {module}ViewSet(viewsets.ModelViewSet):
         return {module}Serializer
 '''
 
+_DJANGO_API_POLICIES = '''\
+"""DRF access policies for the {module} module."""
+from rest_framework_access_policy import AccessPolicy
+
+__all__ = ["{module}Policy"]
+
+
+class {module}Policy(AccessPolicy):
+    """Access policy for {module} API endpoints."""
+
+    statements = [
+        {{
+            "action": ["list", "retrieve"],
+            "principal": "authenticated",
+            "effect": "allow",
+        }},
+        # {{
+        #     "action": ["create", "update", "partial_update"],
+        #     "principal": ["group:{module_lower}_staff"],
+        #     "effect": "allow",
+        # }},
+        # {{
+        #     "action": ["destroy"],
+        #     "principal": ["group:{module_lower}_admin"],
+        #     "effect": "allow",
+        # }},
+    ]
+'''
+
 _DJANGO_API_URLS = '''\
 """API URL configuration for the {module} module.
 
@@ -694,6 +723,7 @@ PRESETS: dict[str, dict[str, str]] = {
         "models/__init__.py":                  "from .{module_lower} import {module}  # noqa: F401\n",
         "models/{module_lower}.py":            _DJANGO_MODELS,
         "serializers.py":                      _DJANGO_API_SERIALIZER,
+        "policies.py":                         _DJANGO_API_POLICIES,
         "viewsets.py":                         _DJANGO_API_VIEWSET,
         "api/__init__.py":                     "",
         "api/urls.py":                         _DJANGO_API_URLS,

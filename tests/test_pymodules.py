@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import sys
+import types
 import warnings
 from pathlib import Path
 from types import SimpleNamespace
@@ -245,6 +246,130 @@ class TestDjangoModuleRegistry:
         with pytest.raises(ModuleDependencyError):
             registry.all_enabled_ordered()
 
+    def test_collect_policies_discovers_flat_policy_module(self, modules_dir, monkeypatch):
+        fake_policy_module = types.ModuleType("rest_framework_access_policy")
+
+        class FakeAccessPolicy:
+            statements = []
+
+        fake_policy_module.AccessPolicy = FakeAccessPolicy
+        monkeypatch.setitem(sys.modules, "rest_framework_access_policy", fake_policy_module)
+
+        blog_dir = modules_dir / "Blog"
+        blog_dir.mkdir(parents=True)
+        (blog_dir / "__init__.py").write_text("")
+        (blog_dir / "module.json").write_text(json.dumps({"name": "Blog", "enabled": True}))
+        (blog_dir / "policies.py").write_text(
+            "from rest_framework_access_policy import AccessPolicy\n\n"
+            "class BlogPolicy(AccessPolicy):\n"
+            "    statements = []\n"
+        )
+
+        registry = DjangoModuleRegistry(modules_path=modules_dir)
+        policies = registry.collect_policies()
+
+        assert "modules.Blog.policies.BlogPolicy" in policies
+        assert policies["modules.Blog.policies.BlogPolicy"].__name__ == "BlogPolicy"
+
+    def test_collect_policies_supports_package_layout(self, modules_dir, monkeypatch):
+        fake_policy_module = types.ModuleType("rest_framework_access_policy")
+
+        class FakeAccessPolicy:
+            statements = []
+
+        fake_policy_module.AccessPolicy = FakeAccessPolicy
+        monkeypatch.setitem(sys.modules, "rest_framework_access_policy", fake_policy_module)
+
+        hr_dir = modules_dir / "HR"
+        hr_dir.mkdir(parents=True)
+        (hr_dir / "__init__.py").write_text("")
+        (hr_dir / "module.json").write_text(json.dumps({"name": "HR", "enabled": True}))
+        policies_dir = hr_dir / "policies"
+        policies_dir.mkdir()
+        (policies_dir / "__init__.py").write_text("from .employee import EmployeePolicy\n")
+        (policies_dir / "employee.py").write_text(
+            "from rest_framework_access_policy import AccessPolicy\n\n"
+            "class EmployeePolicy(AccessPolicy):\n"
+            "    statements = []\n"
+        )
+
+        registry = DjangoModuleRegistry(modules_path=modules_dir)
+        policies = registry.collect_policies()
+
+        assert "modules.HR.policies.employee.EmployeePolicy" in policies
+
+    def test_collect_policies_warns_on_broken_policy_module(self, modules_dir, monkeypatch):
+        fake_policy_module = types.ModuleType("rest_framework_access_policy")
+
+        class FakeAccessPolicy:
+            statements = []
+
+        fake_policy_module.AccessPolicy = FakeAccessPolicy
+        monkeypatch.setitem(sys.modules, "rest_framework_access_policy", fake_policy_module)
+
+        blog_dir = modules_dir / "Blog"
+        blog_dir.mkdir(parents=True)
+        (blog_dir / "__init__.py").write_text("")
+        (blog_dir / "module.json").write_text(json.dumps({"name": "Blog", "enabled": True}))
+        (blog_dir / "policies.py").write_text("raise RuntimeError('broken policy import')\n")
+
+        registry = DjangoModuleRegistry(modules_path=modules_dir)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            policies = registry.collect_policies()
+
+        assert policies == {}
+        assert any("could not import policies" in str(item.message) for item in caught)
+
+    def test_collect_policies_cache_is_invalidated_on_scan(self, modules_dir, monkeypatch):
+        fake_policy_module = types.ModuleType("rest_framework_access_policy")
+
+        class FakeAccessPolicy:
+            statements = []
+
+        fake_policy_module.AccessPolicy = FakeAccessPolicy
+        monkeypatch.setitem(sys.modules, "rest_framework_access_policy", fake_policy_module)
+
+        blog_dir = modules_dir / "Blog"
+        blog_dir.mkdir(parents=True)
+        (blog_dir / "__init__.py").write_text("")
+        (blog_dir / "module.json").write_text(json.dumps({"name": "Blog", "enabled": True}))
+        (blog_dir / "policies.py").write_text(
+            "from rest_framework_access_policy import AccessPolicy\n\n"
+            "class BlogPolicy(AccessPolicy):\n"
+            "    statements = []\n"
+        )
+
+        registry = DjangoModuleRegistry(modules_path=modules_dir)
+        assert list(registry.collect_policies()) == ["modules.Blog.policies.BlogPolicy"]
+
+        shop_dir = modules_dir / "Shop"
+        shop_dir.mkdir(parents=True)
+        (shop_dir / "__init__.py").write_text("")
+        (shop_dir / "module.json").write_text(json.dumps({"name": "Shop", "enabled": True}))
+        (shop_dir / "policies.py").write_text(
+            "from rest_framework_access_policy import AccessPolicy\n\n"
+            "class ShopPolicy(AccessPolicy):\n"
+            "    statements = []\n"
+        )
+
+        registry.scan()
+        policies = registry.collect_policies()
+        assert "modules.Shop.policies.ShopPolicy" in policies
+
+    def test_collect_policies_requires_drf_access_policy(self, modules_dir):
+        from django.core.exceptions import ImproperlyConfigured
+
+        blog_dir = modules_dir / "Blog"
+        blog_dir.mkdir(parents=True)
+        (blog_dir / "__init__.py").write_text("")
+        (blog_dir / "module.json").write_text(json.dumps({"name": "Blog", "enabled": True}))
+        (blog_dir / "policies.py").write_text("class Placeholder:\n    pass\n")
+
+        registry = DjangoModuleRegistry(modules_path=modules_dir)
+        with pytest.raises(ImproperlyConfigured, match="drf-access-policy"):
+            registry.collect_policies()
+
 
 # ------------------------------------------------------------------
 # Module tests
@@ -311,6 +436,14 @@ class TestModuleGenerator:
         assert (path / "api" / "urls.py").exists()
         assert (path / "viewsets.py").exists()
         assert (path / "serializers.py").exists()
+        assert (path / "policies.py").exists()
+        assert "class BlogPolicy(AccessPolicy):" in (path / "policies.py").read_text()
+
+    def test_generate_django_preset_does_not_create_api_policy_stub(self, registry):
+        gen = ModuleGenerator(registry, preset="django")
+        path = gen.generate("Blog")
+
+        assert not (path / "policies.py").exists()
 
     def test_generate_fastapi_crud_preset_has_update_delete_routes(self, registry):
         gen = ModuleGenerator(registry, preset="fastapi-crud")

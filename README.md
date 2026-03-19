@@ -442,6 +442,7 @@ Blog/
     module.json, __init__.py, apps.py, providers.py
     models/blog.py
     serializers.py      ← DRF ModelSerializer + ListSerializer
+    policies.py         ← DRF AccessPolicy scaffold for API permissions
     viewsets.py         ← DRF ModelViewSet
     api/urls.py         ← DefaultRouter wiring
     routes.py           ← thin wrapper delegating to api/urls.py
@@ -609,6 +610,77 @@ BLOG_CACHE_TTL = 300
 ```
 
 These are automatically merged into Django settings via `collect_settings()`.
+
+### API permissions with `collect_policies()`
+
+For DRF-based modules, `DjangoModuleRegistry.collect_policies()` auto-discovers
+`AccessPolicy` subclasses from enabled modules. This is library-level plumbing:
+`pymodules` handles discovery and naming conventions, while each application
+keeps its actual permission rules inside its own modules.
+
+`collect_policies()` supports either:
+
+- a flat `policies.py` file for simple modules
+- a `policies/` package for larger modules
+
+Example `settings.py` usage:
+
+```python
+from pathlib import Path
+from pymodules.integrations.django import DjangoModuleRegistry
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+MODULE_REGISTRY = DjangoModuleRegistry(modules_path=BASE_DIR / "modules")
+
+MODULE_POLICIES = MODULE_REGISTRY.collect_policies()
+```
+
+Example `django-api` scaffold output:
+
+```python
+# modules/Blog/policies.py
+from rest_framework_access_policy import AccessPolicy
+
+
+class BlogPolicy(AccessPolicy):
+    statements = [
+        {
+            "action": ["list", "retrieve"],
+            "principal": "authenticated",
+            "effect": "allow",
+        },
+    ]
+```
+
+Direct binding inside a DRF viewset:
+
+```python
+from rest_framework import viewsets
+
+from .models.blog import Blog
+from .policies import BlogPolicy
+from .serializers import BlogSerializer
+
+
+class BlogViewSet(viewsets.ModelViewSet):
+    queryset = Blog.objects.all()
+    serializer_class = BlogSerializer
+    permission_classes = [BlogPolicy]
+```
+
+Registry lookup when you want indirection:
+
+```python
+from django.conf import settings
+
+BlogPolicy = settings.MODULE_REGISTRY.get_policy("modules.Blog.policies.BlogPolicy")
+```
+
+If you use a `policies/` package, keys reflect the real import path, for example
+`modules.HR.policies.employee.EmployeePolicy`.
+
+This feature requires `drf-access-policy`, which is included in
+`pytmodules[django-api]`.
 
 ### manage.py commands
 
@@ -914,11 +986,12 @@ from pymodules import (
 - [x] `{folder}` token in stubs — providers path always correct regardless of folder name
 
 **Django Integration**
-- [x] `DjangoModuleRegistry` — `installed_apps()`, `url_patterns()`, `api_url_patterns()`, `migration_modules()`, `collect_settings()`
+- [x] `DjangoModuleRegistry` — `installed_apps()`, `url_patterns()`, `api_url_patterns()`, `migration_modules()`, `collect_settings()`, `collect_policies()`
 - [x] `AppConfig` auto-detection from `apps.py`
 - [x] Module-level URL routing with custom `prefix`
 - [x] Module-level migrations via `MIGRATION_MODULES`
 - [x] Module-level settings merged with `collect_settings()`
+- [x] DRF access policy discovery from module `policies.py` / `policies/`
 - [x] Dependency-aware startup ordering with warning fallback during Django settings evaluation
 - [x] `"pymodules"` as Django app for `manage.py` command discovery
 - [x] `manage.py module_make` — with `--preset`, `--force`, smart default to `django`
@@ -998,6 +1071,7 @@ The following is what separates a useful personal tool from a package the Python
 - [ ] **Celery integration** — auto-discover tasks from enabled modules
 - [ ] **SQLAlchemy integration** — auto-collect models and migrations (Alembic)
 - [ ] **Django REST Framework** — auto-register routers from module `api.py`
+- [x] **Django REST Framework access policies** — auto-discover `AccessPolicy` classes from module `policies.py`
 - [ ] **Django Channels** — WebSocket routing from module `consumers.py`
 
 #### Testing

@@ -33,7 +33,7 @@ dependencies = [
 
 [project.optional-dependencies]
 django = ["django>=4.0"]
-django-api = ["django>=4.0", "djangorestframework>=3.14"]
+django-api = ["django>=4.0", "djangorestframework>=3.14", "drf-access-policy>=1.0"]
 flask  = ["flask>=2.0"]
 fastapi = ["fastapi>=0.95"]
 dev = [
@@ -43,6 +43,7 @@ dev = [
     "twine>=6.1.0",
     "django>=4.0",
     "djangorestframework>=3.14",
+    "drf-access-policy>=1.0",
     "flask>=2.0",
     "fastapi>=0.95",
 ]

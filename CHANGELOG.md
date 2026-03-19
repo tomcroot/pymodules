@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Release automation now uses `.github/workflows/release.yml` for version bump + tag + GitHub Release creation.
 - Publishing now runs from `.github/workflows/publish.yml` on `v*` tag pushes (with `workflow_dispatch` retained as manual fallback).
 
+### Added
+
+- `DjangoModuleRegistry.collect_policies()` and `get_policy()` for auto-discovering DRF `AccessPolicy` classes from enabled module `policies.py` files or `policies/` packages.
+- `django-api` preset scaffolding now generates a `policies.py` stub for DRF permission rules.
+- `pytmodules[django-api]` now includes `drf-access-policy`.
+
 ---
 
 ## [0.1.0] - 2026-03-19
