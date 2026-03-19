@@ -43,9 +43,9 @@ dev = [
 pymodules = "pymodules.commands.cli:cli"
 
 [project.urls]
-Homepage = "https://github.com/yourname/pymodules"
-Repository = "https://github.com/yourname/pymodules"
-Issues = "https://github.com/yourname/pymodules/issues"
+Homepage = "https://github.com/tomcroot/pymodules"
+Repository = "https://github.com/tomcroot/pymodules"
+Issues = "https://github.com/tomcroot/pymodules/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["pymodules"]

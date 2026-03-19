@@ -2,10 +2,10 @@
 
 > Modular application architecture for Python — inspired by Laravel Modules, built for the Python ecosystem.
 
-[![Version](https://img.shields.io/badge/version-0.1.0-blue)](https://github.com/yourname/pymodules)
+[![Version](https://img.shields.io/badge/version-0.1.0-blue)](https://github.com/tomcroot/pymodules)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Status](https://img.shields.io/badge/status-alpha-orange)](https://github.com/yourname/pymodules)
+[![Status](https://img.shields.io/badge/status-alpha-orange)](https://github.com/tomcroot/pymodules)
 
 `pymodules` lets you split large Python applications into self-contained, independently toggleable **modules** — each with its own models, views, routes, config, migrations, service providers, and tests. It works with any Python project and ships with first-class support for **Django**, **Flask**, and **FastAPI**.
 
@@ -109,8 +109,8 @@ pip install "pymodules[django,flask,fastapi]"
 **From GitHub (before PyPI release):**
 
 ```bash
-pip install git+https://github.com/yourname/pymodules.git
-pip install "pymodules[django] @ git+https://github.com/yourname/pymodules.git"
+pip install git+https://github.com/tomcroot/pymodules.git
+pip install "pymodules[django] @ git+https://github.com/tomcroot/pymodules.git"
 ```
 
 **Requirements:** Python 3.10+
@@ -938,7 +938,7 @@ The following is what separates a useful personal tool from a package the Python
 Contributions are welcome. Please open an issue first to discuss what you would like to change.
 
 ```bash
-git clone https://github.com/yourname/pymodules
+git clone https://github.com/tomcroot/pymodules
 cd pymodules
 pip install -e ".[dev]"
 pytest
