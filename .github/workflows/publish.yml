@@ -52,6 +52,7 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     permissions:
+      contents: write
       id-token: write   # required for PyPI trusted publishing via OIDC
     environment:
       name: pypi
@@ -63,6 +64,14 @@ jobs:
         with:
           name: python-package-distributions
           path: dist/
+
+      - name: Ensure GitHub Release exists (tag pushes)
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "$TAG" --generate-notes
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
