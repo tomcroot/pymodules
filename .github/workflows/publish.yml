@@ -1,16 +1,15 @@
-name: Publish (manual re-publish)
+name: Publish
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Fallback workflow for manually re-publishing an existing release to PyPI.
-# Normal releases are fully automated via release.yml (workflow_dispatch).
-# Use this only if a PyPI publish failed mid-flight and needs to be retried
-# from an already-tagged release.
-#
-# This workflow is manual-only (workflow_dispatch). It always runs both the
-# build and publish jobs when triggered.
+# Triggered automatically when a v* tag is pushed (i.e. after release.yml
+# creates the tag). Also supports manual workflow_dispatch as a re-publish
+# fallback if a publish fails mid-flight.
 # ─────────────────────────────────────────────────────────────────────────────
 
 on:
+  push:
+    tags:
+      - "v*"
   workflow_dispatch:
 
 # Restrict default token permissions; each job grants only what it needs.
