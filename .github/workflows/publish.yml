@@ -59,6 +59,10 @@ jobs:
       url: https://pypi.org/p/pytmodules
 
     steps:
+      - name: Check out repository
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        uses: actions/checkout@v4.2.2
+
       - name: Download distributions
         uses: actions/download-artifact@v4.1.8
         with:
@@ -71,7 +75,31 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${GITHUB_REF#refs/tags/}"
-          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "$TAG" --generate-notes
+          VERSION="${TAG#v}"
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            exit 0
+          fi
+
+          python3 - <<'EOF'
+          import re
+
+          version = "${VERSION}"
+          with open("CHANGELOG.md") as f:
+              content = f.read()
+
+          match = re.search(
+              rf"## \[{re.escape(version)}\][^\n]*\n(.*?)(?=\n---\n|\n## \[|\Z)",
+              content,
+              re.DOTALL,
+          )
+
+          notes = match.group(1).strip() if match else "See CHANGELOG.md for details."
+          with open("release_notes.md", "w") as f:
+              f.write(notes)
+          EOF
+
+          gh release create "$TAG" --title "$TAG" --notes-file release_notes.md
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
