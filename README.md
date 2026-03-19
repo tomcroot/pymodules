@@ -92,29 +92,29 @@ This is the **first public release** of pymodules. It is production-usable for g
 
 ```bash
 # Core — no framework dependencies (pure Python, FastAPI, Flask)
-pip install pymodules
+pip install pytmodules
 
 # With Django support
-pip install "pymodules[django]"
+pip install "pytmodules[django]"
 
 # With Django + Django REST Framework scaffolding support
-pip install "pymodules[django-api]"
+pip install "pytmodules[django-api]"
 
 # With Flask support
-pip install "pymodules[flask]"
+pip install "pytmodules[flask]"
 
 # With FastAPI support
-pip install "pymodules[fastapi]"
+pip install "pytmodules[fastapi]"
 
 # Everything
-pip install "pymodules[django,flask,fastapi]"
+pip install "pytmodules[django,flask,fastapi]"
 ```
 
 **From GitHub (development installs):**
 
 ```bash
 pip install git+https://github.com/tomcroot/pymodules.git
-pip install "pymodules[django] @ git+https://github.com/tomcroot/pymodules.git"
+pip install "pytmodules[django] @ git+https://github.com/tomcroot/pymodules.git"
 ```
 
 **Requirements:** Python 3.10+
@@ -154,7 +154,7 @@ pymodules make Blog     # scaffold a Blog module using detected framework
 ### Django project
 
 ```bash
-pip install "pymodules[django]"
+pip install "pytmodules[django]"
 pymodules init          # detects Django, writes pymodules.toml
 pymodules make Blog     # creates full Django module scaffold
 
@@ -165,7 +165,7 @@ python manage.py module_make Blog
 ### FastAPI project
 
 ```bash
-pip install "pymodules[fastapi]"
+pip install "pytmodules[fastapi]"
 pymodules init
 pymodules make Blog     # creates FastAPI module with APIRouter + Pydantic schemas
 ```
@@ -173,7 +173,7 @@ pymodules make Blog     # creates FastAPI module with APIRouter + Pydantic schem
 ### Flask project
 
 ```bash
-pip install "pymodules[flask]"
+pip install "pytmodules[flask]"
 pymodules init
 pymodules make Blog     # creates Flask module with Blueprint
 ```
