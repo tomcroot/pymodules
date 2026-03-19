@@ -8,7 +8,11 @@ version = "0.1.0"
 description = "Laravel-modules inspired modular architecture for Python — framework agnostic."
 readme = "README.md"
 requires-python = ">=3.10"
+authors = [
+    { name = "tomcroot" },
+]
 license = { text = "MIT" }
+license-files = ["LICENSE"]
 keywords = ["modules", "modular", "django", "flask", "fastapi", "architecture"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -32,8 +36,10 @@ django = ["django>=4.0"]
 flask  = ["flask>=2.0"]
 fastapi = ["fastapi>=0.95"]
 dev = [
+    "build>=1.2.2",
     "pytest>=7.0",
     "pytest-cov",
+    "twine>=6.1.0",
     "django>=4.0",
     "flask>=2.0",
     "fastapi>=0.95",
@@ -44,8 +50,23 @@ pymodules = "pymodules.commands.cli:cli"
 
 [project.urls]
 Homepage = "https://github.com/tomcroot/pymodules"
+Documentation = "https://github.com/tomcroot/pymodules#readme"
 Repository = "https://github.com/tomcroot/pymodules"
 Issues = "https://github.com/tomcroot/pymodules/issues"
+Changelog = "https://github.com/tomcroot/pymodules/blob/main/CHANGELOG.md"
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/pymodules",
+    "/tests",
+    "/docs",
+    "/README.md",
+    "/CHANGELOG.md",
+    "/CONTRIBUTING.md",
+    "/SECURITY.md",
+    "/LICENSE",
+    "/pyproject.toml",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["pymodules"]

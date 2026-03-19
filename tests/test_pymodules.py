@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import sys
+import warnings
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -18,6 +19,8 @@ from pymodules.exceptions import (
     ModuleDependencyError,
     ModuleNotFoundError,
 )
+from pymodules.integrations.django import DjangoModuleRegistry
+from pymodules.management.commands.module_make_model import Command as MakeModelCommand
 
 
 @pytest.fixture()
@@ -166,6 +169,26 @@ class TestModuleRegistry:
         with pytest.raises(ModuleDependencyError):
             registry.all_enabled_ordered()
 
+
+class TestDjangoModuleRegistry:
+    def test_installed_apps_warns_and_falls_back_on_dependency_error(self, modules_dir):
+        for name, requires in [("Blog", []), ("Sales", ["MissingCore"])]:
+            mod_dir = modules_dir / name
+            mod_dir.mkdir(parents=True)
+            (mod_dir / "__init__.py").write_text("")
+            (mod_dir / "module.json").write_text(
+                json.dumps({"name": name, "enabled": True, "requires": requires})
+            )
+
+        registry = DjangoModuleRegistry(modules_path=modules_dir)
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            apps = registry.installed_apps()
+
+        assert apps == [module.import_path for module in registry.all_enabled()]
+        assert any("could not resolve dependency order" in str(item.message) for item in caught)
+
     def test_all_enabled_ordered_raises_on_cycle(self, registry):
         for name, requires in [
             ("A", ["B"]),
@@ -268,4 +291,35 @@ class TestModuleGenerator:
         path = gen.generate("Config")
         assert (path / "config" / "config.py").exists()
         config_content = (path / "config" / "config.py").read_text()
-        assert "HTTP_TIMEOUT" in config_content or len(config_content) > 0
+        assert 'CONFIG_SETTING_EXAMPLE = "change-me"' in config_content
+
+
+class TestModuleMakeModelCommand:
+    def test_generate_model_uses_safe_default_str(self):
+        command = MakeModelCommand()
+
+        code = command._generate_model(
+            model_name="Post",
+            is_abstract=False,
+            is_proxy=False,
+            module_name="Blog",
+            parent_name=None,
+        )
+
+        assert 'return f"{self.__class__.__name__} #{self.pk}"' in code
+        assert 'verbose_name_plural = "Posts"' in code
+
+    def test_generate_proxy_model_imports_parent_module_file(self):
+        command = MakeModelCommand()
+
+        code = command._generate_model(
+            model_name="ArchivedPost",
+            is_abstract=False,
+            is_proxy=True,
+            module_name="Blog",
+            parent_name="Post",
+        )
+
+        assert "from .post import Post" in code
+        assert "class ArchivedPost(Post):" in code
+        assert "proxy = True" in code

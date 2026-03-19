@@ -98,6 +98,10 @@ pymodules/
 ├── integrations/         — Django / Flask / FastAPI adapters
 └── management/           — Django manage.py commands
     └── commands/
+        ├── module_make_model.py
+        ├── module_make_model_migration.py
+        ├── module_make_migration.py
+        └── module_migrate.py
 tests/
 └── test_pymodules.py
 ```

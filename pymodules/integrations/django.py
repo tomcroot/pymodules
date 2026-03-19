@@ -50,9 +50,11 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from ..exceptions import ModuleDependencyError
 from ..registry import ModuleRegistry
 from ..module import Module
 
@@ -119,6 +121,25 @@ class DjangoModuleRegistry(ModuleRegistry):
     # INSTALLED_APPS
     # ------------------------------------------------------------------
 
+    def _enabled_modules_for_startup(self, context: str) -> list[Module]:
+        """
+        Return modules in dependency order when possible.
+
+        During Django startup, dependency errors in module manifests are easier to
+        diagnose if settings can still load. In that case, fall back to the plain
+        enabled list and emit a warning.
+        """
+        try:
+            return self.all_enabled_ordered()
+        except ModuleDependencyError as exc:
+            warnings.warn(
+                f"pymodules could not resolve dependency order while building {context}: {exc}. "
+                "Falling back to enabled module order so Django can finish startup.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            return self.all_enabled()
+
     def installed_apps(self) -> list[str]:
         """
         Return dotted app paths for Django's INSTALLED_APPS.
@@ -127,7 +148,7 @@ class DjangoModuleRegistry(ModuleRegistry):
         returns the full dotted path. Falls back to the bare import path.
         """
         apps: list[str] = []
-        for module in self.all_enabled_ordered():
+        for module in self._enabled_modules_for_startup("INSTALLED_APPS"):
             apps.append(self._resolve_app_config(module))
         return apps
 
@@ -170,7 +191,7 @@ class DjangoModuleRegistry(ModuleRegistry):
         from django.urls import include, path  # type: ignore[import]
 
         patterns = []
-        for module in self.all_enabled_ordered():
+        for module in self._enabled_modules_for_startup("urlpatterns"):
             if module.has_file("routes.py"):
                 mod = importlib.import_module(f"{module.import_path}.routes")
                 if hasattr(mod, "urlpatterns"):
@@ -193,7 +214,7 @@ class DjangoModuleRegistry(ModuleRegistry):
             MIGRATION_MODULES = MODULE_REGISTRY.migration_modules()
         """
         result: dict[str, str] = {}
-        for module in self.all_enabled_ordered():
+        for module in self._enabled_modules_for_startup("MIGRATION_MODULES"):
             migrations_path = module.path / "database" / "migrations"
             if migrations_path.exists():
                 app_label = module.name.lower()
@@ -213,7 +234,7 @@ class DjangoModuleRegistry(ModuleRegistry):
             locals().update(MODULE_REGISTRY.collect_settings())
         """
         merged: dict = {}
-        for module in self.all_enabled_ordered():
+        for module in self._enabled_modules_for_startup("settings collection"):
             config_file = module.path / "config" / "config.py"
             if config_file.exists():
                 spec = importlib.util.spec_from_file_location(

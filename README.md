@@ -203,6 +203,7 @@ Every module has a `module.json` at its root. This is the single source of truth
     "description": "Blog module with posts, tags and comments.",
     "author": "Your Name",
     "enabled": true,
+    "requires": ["Core"],
     "providers": [
         "modules.Blog.providers.BlogServiceProvider"
     ],
@@ -224,6 +225,7 @@ Every module has a `module.json` at its root. This is the single source of truth
 | `description` | No | Human-readable description |
 | `author` | No | Author name or email |
 | `enabled` | Yes | `true`/`false` — controls whether the module boots |
+| `requires` | No | List of module names that must boot before this module |
 | `providers` | No | Dotted paths to ServiceProvider subclasses |
 | `publishes` | No | Asset publish map (group → source → destination) |
 
@@ -517,15 +519,15 @@ urlpatterns = [
 ```python
 # modules/Blog/routes.py
 from django.urls import path
-from . import views
+from .views.blog_views import index, detail
 
 prefix = "blog"     # mounted at /blog/
 
 app_name = "blog"
 
 urlpatterns = [
-    path("", views.index, name="index"),
-    path("<int:pk>/", views.detail, name="detail"),
+    path("", index, name="index"),
+    path("<int:pk>/", detail, name="detail"),
 ]
 ```
 
@@ -559,6 +561,11 @@ python manage.py module_delete  Blog --yes
 python manage.py module_publish Blog
 python manage.py module_publish Blog --group config
 python manage.py module_publish --force
+python manage.py module_make_model Blog Post
+python manage.py module_make_model Blog ArchivedPost --proxy --parent Post
+python manage.py module_make_model_migration Blog Post --auto-name
+python manage.py module_make_migration Blog
+python manage.py module_migrate Blog
 ```
 
 `module_make` without `--preset` defaults to `"django"` when running via `manage.py` — because the fact that you're using `manage.py` is itself proof this is a Django project.
@@ -838,6 +845,7 @@ from pymodules import (
 - [x] Module-level URL routing with custom `prefix`
 - [x] Module-level migrations via `MIGRATION_MODULES`
 - [x] Module-level settings merged with `collect_settings()`
+- [x] Dependency-aware startup ordering with warning fallback during Django settings evaluation
 - [x] `"pymodules"` as Django app for `manage.py` command discovery
 - [x] `manage.py module_make` — with `--preset`, `--force`, smart default to `django`
 - [x] `manage.py module_list` — with `--enabled` / `--disabled`
@@ -845,6 +853,16 @@ from pymodules import (
 - [x] `manage.py module_show`
 - [x] `manage.py module_delete` — with `--yes` flag
 - [x] `manage.py module_publish` — with `--group`, `--force`
+- [x] `manage.py module_make_model` — lightweight per-file model scaffold
+- [x] `manage.py module_make_model_migration` — migration generation scoped to one model
+- [x] `manage.py module_make_migration` — module-scoped `makemigrations`
+- [x] `manage.py module_migrate` — module-scoped `migrate`
+
+**Dependencies & Boot Order**
+- [x] `module.json` `requires` declarations
+- [x] Topological boot ordering for enabled modules
+- [x] Circular dependency detection
+- [x] Missing / disabled dependency errors
 
 **Flask Integration**
 - [x] `FlaskModuleRegistry` — auto-registers Blueprints
@@ -866,7 +884,6 @@ from pymodules import (
 
 ### 🔄 In Progress
 
-- [ ] **Module dependency declarations** — `module.json` `requires` field, boot order resolution
 - [ ] **`pymodules upgrade` command** — diff existing module against current preset stubs and offer selective updates
 - [ ] **Test coverage enforcement** — `pytest-cov` integration with minimum threshold config in `pymodules.toml`
 - [ ] **Detector: `setup.py` scanning** — legacy projects that don't use `pyproject.toml` or `requirements.txt`
@@ -885,7 +902,6 @@ The following is what separates a useful personal tool from a package the Python
 - [ ] **Error messages with fix suggestions** — every raised exception includes the exact command or code to resolve it
 
 #### Architecture & Core
-- [ ] **Module dependency graph** — `requires: ["Auth"]` in `module.json`, topological boot order, circular dependency detection
 - [ ] **Module versioning and constraints** — `requires: [{"name": "Auth", "version": ">=1.2.0"}]`
 - [ ] **Async boot support** — `async def register()` / `async def boot()` in service providers for async frameworks (FastAPI, Starlette, Litestar)
 - [ ] **Module events / hooks system** — typed inter-module communication without direct imports (`module.emit("user.created", payload)`)

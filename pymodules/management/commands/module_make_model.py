@@ -1,12 +1,12 @@
 """
-python manage.py module_make_model <ModuleName> <ModelName> [--abstract] [--proxy]
+python manage.py module_make_model <ModuleName> <ModelName> [--abstract] [--proxy --parent ParentModel]
 
 Create a lightweight Django model scaffold in a module without bloat.
 
 Examples:
     python manage.py module_make_model Blog Post
     python manage.py module_make_model Auth User --abstract
-    python manage.py module_make_model Shop Order --proxy
+    python manage.py module_make_model Shop ArchivedOrder --proxy --parent Order
 
 Each model is created as a separate file in models/{model_lower}.py (not monolithic),
 then automatically exported via models/__init__.py.
@@ -28,7 +28,12 @@ class Command(BaseCommand):
         parser.add_argument("module_name", help="Module name where model will be created.")
         parser.add_argument("model_name", help="Name of the model class to create.")
         parser.add_argument("--abstract", action="store_true", help="Create an abstract base model.")
-        parser.add_argument("--proxy", action="store_true", help="Create a proxy model (requires parent model).")
+        parser.add_argument("--proxy", action="store_true", help="Create a proxy model.")
+        parser.add_argument(
+            "--parent",
+            default=None,
+            help="Base model class for --proxy models, e.g. --parent BasePost.",
+        )
 
     def handle(self, *args, **options):
         registry = get_registry()
@@ -42,6 +47,14 @@ class Command(BaseCommand):
         model_lower = model_name.lower()
         is_abstract = options["abstract"]
         is_proxy = options["proxy"]
+        parent_name = options["parent"]
+
+        if is_abstract and is_proxy:
+            raise CommandError("--abstract and --proxy cannot be used together.")
+        if is_proxy and not parent_name:
+            raise CommandError("--proxy requires --parent so the generated model is a real Django proxy.")
+        if parent_name and not is_proxy:
+            raise CommandError("--parent is only valid together with --proxy.")
 
         # Ensure models directory exists
         models_dir = module.path / "models"
@@ -58,7 +71,13 @@ class Command(BaseCommand):
         if model_file.exists():
             raise CommandError(f"Model file already exists: {model_file}")
 
-        model_code = self._generate_model(model_name, model_lower, is_abstract, is_proxy, module.name)
+        model_code = self._generate_model(
+            model_name,
+            is_abstract,
+            is_proxy,
+            module.name,
+            parent_name,
+        )
         model_file.write_text(model_code)
 
         # Update models/__init__.py to export the model
@@ -74,37 +93,50 @@ class Command(BaseCommand):
         )
 
     def _generate_model(
-        self, model_name: str, model_lower: str, is_abstract: bool, is_proxy: bool, module_name: str
+        self,
+        model_name: str,
+        is_abstract: bool,
+        is_proxy: bool,
+        module_name: str,
+        parent_name: str | None,
     ) -> str:
         """Generate model code scaffold."""
-        
+        imports = ["from django.db import models"]
+
         if is_abstract:
             class_def = f"class {model_name}(models.Model):"
-            meta = f"""\
+            meta = """\
     class Meta:
         abstract = True"""
         elif is_proxy:
-            class_def = f"class {model_name}(models.Model):"
-            meta = f"""\
-    class Meta:
-        proxy = True
-        app_label = "{module_name.lower()}\""""
+            imports.append(f"from .{parent_name.lower()} import {parent_name}")
+            class_def = f"class {model_name}({parent_name}):"
+            meta = "\n".join(
+                [
+                    "    class Meta:",
+                    "        proxy = True",
+                    f'        app_label = "{module_name.lower()}"',
+                ]
+            )
         else:
             class_def = f"class {model_name}(models.Model):"
-            meta = f"""\
-    class Meta:
-        app_label = "{module_name.lower()}"
-        verbose_name = "{model_name}"
-        verbose_name_plural = "{model_name}s\""""
+            meta = "\n".join(
+                [
+                    "    class Meta:",
+                    f'        app_label = "{module_name.lower()}"',
+                    f'        verbose_name = "{model_name}"',
+                    f'        verbose_name_plural = "{model_name}s"',
+                ]
+            )
 
         return f'''\
 """Model for the {module_name} module — {model_name}."""
-from django.db import models
+{"\n".join(imports)}
 
 
 {class_def}
     """Lightweight {model_name} model."""
-    
+
     # TODO: Add your fields here
     # name = models.CharField(max_length=200)
     # description = models.TextField(blank=True, null=True)
@@ -114,7 +146,7 @@ from django.db import models
     {meta}
 
     def __str__(self) -> str:
-        return self.name  # Adjust to your model fields
+        return f"{{self.__class__.__name__}} #{{self.pk}}"
 '''
 
     def _update_models_init(self, init_path: Path, model_name: str, model_lower: str) -> None:
