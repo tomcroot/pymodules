@@ -5,11 +5,12 @@ name: Publish (manual re-publish)
 # Normal releases are fully automated via release.yml (workflow_dispatch).
 # Use this only if a PyPI publish failed mid-flight and needs to be retried
 # from an already-tagged release.
+#
+# This workflow is manual-only (workflow_dispatch). It always runs both the
+# build and publish jobs when triggered.
 # ─────────────────────────────────────────────────────────────────────────────
 
 on:
-  release:
-    types: [published]
   workflow_dispatch:
 
 # Restrict default token permissions; each job grants only what it needs.
@@ -49,10 +50,6 @@ jobs:
           retention-days: 1
 
   publish:
-    # Only publish on an actual GitHub Release event — not on workflow_dispatch.
-    # workflow_dispatch is intentionally limited to build + check so you can
-    # validate artifacts without deploying.
-    if: github.event_name == 'release'
     needs: build
     runs-on: ubuntu-latest
     permissions:
