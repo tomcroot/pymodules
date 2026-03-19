@@ -152,6 +152,12 @@ class DjangoModuleRegistry(ModuleRegistry):
             )
             return self.all_enabled()
 
+    def _clear_import_cache(self, module_path: str) -> None:
+        """Drop cached modules for a namespace so dynamic imports re-read files."""
+        for key in list(sys.modules.keys()):
+            if key == module_path or key.startswith(f"{module_path}."):
+                sys.modules.pop(key, None)
+
     def installed_apps(self) -> list[str]:
         """
         Return dotted app paths for Django's INSTALLED_APPS.
@@ -207,6 +213,7 @@ class DjangoModuleRegistry(ModuleRegistry):
         patterns = []
         for module in self._enabled_modules_for_startup("urlpatterns"):
             if module.has_file("routes.py"):
+                self._clear_import_cache(module.import_path)
                 mod = importlib.import_module(f"{module.import_path}.routes")
                 if hasattr(mod, "urlpatterns"):
                     prefix = getattr(mod, "prefix", module.name.lower())
@@ -239,7 +246,13 @@ class DjangoModuleRegistry(ModuleRegistry):
         patterns = []
         for module in self._enabled_modules_for_startup("api urlpatterns"):
             if module.has_file("api", "urls.py"):
-                mod = importlib.import_module(f"{module.import_path}.api.urls")
+                try:
+                    self._clear_import_cache(module.import_path)
+                    mod = importlib.import_module(f"{module.import_path}.api.urls")
+                except Exception as exc:  # noqa: BLE001
+                    raise RuntimeError(
+                        f"Failed to load API URLs for module {module.name!r}: {exc}"
+                    ) from exc
                 if hasattr(mod, "urlpatterns"):
                     prefix = getattr(mod, "api_prefix", module.name.lower())
                     patterns.append(path(f"{api_root}/{prefix}/", include(mod)))

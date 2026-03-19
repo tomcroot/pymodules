@@ -6,7 +6,7 @@ import sys
 import warnings
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -20,6 +20,7 @@ from pymodules.exceptions import (
     ModuleNotFoundError,
 )
 from pymodules.integrations.django import DjangoModuleRegistry
+from pymodules.management.commands.module_make_api_urls import Command as MakeApiUrlsCommand
 from pymodules.management.commands.module_make_model import Command as MakeModelCommand
 
 
@@ -211,6 +212,23 @@ class TestDjangoModuleRegistry:
 
         assert len(patterns) == 1
 
+    def test_api_url_patterns_wraps_import_error_with_module_context(self, modules_dir):
+        blog_dir = modules_dir / "Blog"
+        blog_dir.mkdir(parents=True)
+        (blog_dir / "__init__.py").write_text("")
+        (blog_dir / "module.json").write_text(
+            json.dumps({"name": "Blog", "enabled": True})
+        )
+
+        api_dir = blog_dir / "api"
+        api_dir.mkdir(parents=True)
+        (api_dir / "__init__.py").write_text("")
+        (api_dir / "urls.py").write_text("raise RuntimeError('boom')\n")
+
+        registry = DjangoModuleRegistry(modules_path=modules_dir)
+        with pytest.raises(RuntimeError, match="Failed to load API URLs for module 'Blog'"):
+            registry.api_url_patterns()
+
     def test_all_enabled_ordered_raises_on_cycle(self, registry):
         for name, requires in [
             ("A", ["B"]),
@@ -368,3 +386,42 @@ class TestModuleMakeModelCommand:
         assert "from .post import Post" in code
         assert "class ArchivedPost(Post):" in code
         assert "proxy = True" in code
+
+
+class TestModuleMakeApiUrlsCommand:
+    def test_append_route_to_existing_api_urls(self, registry):
+        mod_dir = registry.modules_root / "Blog"
+        mod_dir.mkdir(parents=True)
+        (mod_dir / "__init__.py").write_text("")
+        (mod_dir / "module.json").write_text(json.dumps({"name": "Blog", "enabled": True}))
+
+        (mod_dir / "viewsets.py").write_text(
+            "class BlogViewSet:\n    pass\n\n"
+            "class TagViewSet:\n    pass\n"
+        )
+
+        api_dir = mod_dir / "api"
+        api_dir.mkdir(parents=True)
+        (api_dir / "__init__.py").write_text("")
+        (api_dir / "urls.py").write_text(
+            "from rest_framework.routers import DefaultRouter\n\n"
+            "from ..viewsets import BlogViewSet\n\n"
+            "api_prefix = \"blog\"\n\n"
+            "router = DefaultRouter()\n"
+            "router.register(r\"\", BlogViewSet, basename=\"blog\")\n\n"
+            "urlpatterns = router.urls\n"
+        )
+
+        registry.scan()
+
+        cmd = MakeApiUrlsCommand()
+        cmd.stdout = MagicMock()
+        cmd.style = MagicMock()
+        cmd.style.SUCCESS = lambda s: s
+
+        with patch("pymodules.management.commands.module_make_api_urls.get_registry", return_value=registry):
+            cmd.handle(module_name="Blog", model_name="Tag", api_prefix="tags", force=False)
+
+        updated = (api_dir / "urls.py").read_text()
+        assert "from ..viewsets import BlogViewSet, TagViewSet" in updated
+        assert 'router.register(r"tags", TagViewSet, basename="tags")' in updated

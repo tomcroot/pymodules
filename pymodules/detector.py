@@ -46,7 +46,7 @@ from pathlib import Path
 @dataclass
 class FrameworkInfo:
     name: str           # "django" | "fastapi" | "flask" | "unknown"
-    preset: str         # matching generator preset ("django"|"fastapi"|"flask"|"default")
+    preset: str         # matching generator preset ("django"|"django-api"|"fastapi"|"flask"|"default")
     confidence: str     # "high" | "medium" | "low"
     reason: str         # human-readable explanation
     all_detected: list[str] = field(default_factory=list)  # every framework found
@@ -58,6 +58,11 @@ _PRESET_MAP = {
     "flask":   "flask",
     "unknown": "default",
 }
+
+_DJANGO_API_DEP_PATTERNS = [
+    r"\bdjangorestframework\b",
+    r"\brest_framework\b",
+]
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Per-framework detection rules
@@ -169,6 +174,28 @@ def _deps_mention(framework: str, root: Path) -> bool:
     return False
 
 
+def _deps_match_patterns(patterns: list[str], root: Path) -> bool:
+    compiled = [re.compile(p, re.IGNORECASE) for p in patterns]
+    for rel in _DEP_FILES:
+        dep_file = root / rel
+        if dep_file.exists():
+            try:
+                text = dep_file.read_text(encoding="utf-8", errors="ignore")
+                if any(p.search(text) for p in compiled):
+                    return True
+            except OSError:
+                pass
+    return False
+
+
+def _resolve_preset(framework: str, root: Path) -> str:
+    """Map detected framework to the most suitable scaffold preset."""
+    if framework == "django":
+        if _is_importable("rest_framework") or _deps_match_patterns(_DJANGO_API_DEP_PATTERNS, root):
+            return "django-api"
+    return _PRESET_MAP[framework]
+
+
 def _django_settings_configured() -> bool:
     """True if DJANGO_SETTINGS_MODULE is set in the environment."""
     import os
@@ -253,9 +280,13 @@ def detect_framework(search_path: Path | None = None) -> FrameworkInfo:
         others = [f for f in all_detected if f != winner]
         reason += f" (also detected: {', '.join(others)} — using {winner} by priority)"
 
+    preset = _resolve_preset(winner, root)
+    if winner == "django" and preset == "django-api":
+        reason += "; detected Django REST Framework, using django-api preset"
+
     return FrameworkInfo(
         name=winner,
-        preset=_PRESET_MAP[winner],
+        preset=preset,
         confidence=confidence,
         reason=reason,
         all_detected=all_detected,

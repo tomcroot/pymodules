@@ -18,7 +18,7 @@ class TestDetectFramework:
         info = detect_framework(tmp_path)
         assert isinstance(info, FrameworkInfo)
         assert info.name in ("django", "fastapi", "flask", "unknown")
-        assert info.preset in ("django", "fastapi", "flask", "default")
+        assert info.preset in ("django", "django-api", "fastapi", "flask", "default")
         assert info.confidence in ("high", "medium", "low")
         assert isinstance(info.reason, str)
 
@@ -92,3 +92,19 @@ class TestDetectFramework:
         with patch("pymodules.detector._is_importable", return_value=False):
             info = detect_framework(tmp_path)
         assert info.preset == "default"
+
+    def test_detects_django_api_preset_when_drf_is_importable(self, tmp_path):
+        with patch(
+            "pymodules.detector._is_importable",
+            side_effect=lambda n: n in ("django", "rest_framework"),
+        ):
+            info = detect_framework(tmp_path)
+        assert info.name == "django"
+        assert info.preset == "django-api"
+
+    def test_detects_django_api_preset_from_dependencies(self, tmp_path):
+        (tmp_path / "requirements.txt").write_text("Django>=4.0\ndjangorestframework>=3.14\n")
+        with patch("pymodules.detector._is_importable", return_value=False):
+            info = detect_framework(tmp_path)
+        assert info.name == "django"
+        assert info.preset == "django-api"

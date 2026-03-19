@@ -10,7 +10,7 @@ Examples:
 """
 from __future__ import annotations
 
-from pathlib import Path
+import re
 
 from django.core.management.base import BaseCommand, CommandError  # type: ignore[import]
 
@@ -36,8 +36,8 @@ class Command(BaseCommand):
             "--api-prefix",
             default=None,
             help=(
-                "URL prefix used when mounted by api_url_patterns(). "
-                "Defaults to module name lowercased."
+                "For new files: URL mount prefix used by api_url_patterns(). "
+                "For existing files: sub-route prefix for additional ViewSet registration."
             ),
         )
         parser.add_argument(
@@ -80,10 +80,17 @@ class Command(BaseCommand):
 
         urls_file = api_dir / "urls.py"
         if urls_file.exists() and not force:
-            raise CommandError(
-                f"api/urls.py already exists in module '{module.name}'. "
-                "Use --force to overwrite."
+            route_prefix = options["api_prefix"] or model_name.lower()
+            self._append_route(urls_file, model_name, route_prefix)
+            self.stdout.write(
+                self.style.SUCCESS(
+                    f"✓ api/urls.py updated for module '{module.name}' with route '{route_prefix}/'."
+                )
             )
+            self.stdout.write(
+                f"  Registered {model_name}ViewSet at /api/<module>/{route_prefix}/\n"
+            )
+            return
 
         content = f'''\
 """API URL configuration for the {module.name} module.
@@ -123,3 +130,45 @@ urlpatterns = router.urls
             f"    *settings.MODULE_REGISTRY.api_url_patterns()\n"
             f"\n  This mounts {module.name} API at: /api/{api_prefix}/\n"
         )
+
+    def _append_route(self, urls_file, model_name: str, route_prefix: str) -> None:
+        content = urls_file.read_text()
+        viewset_name = f"{model_name}ViewSet"
+        import_line_start = "from ..viewsets import "
+        register_line = (
+            f'router.register(r"{route_prefix}", {viewset_name}, basename="{route_prefix}")'
+        )
+
+        if register_line in content:
+            raise CommandError(
+                f"Route prefix '{route_prefix}' for {viewset_name} is already registered in api/urls.py."
+            )
+
+        # Update or insert import for the ViewSet.
+        if import_line_start in content:
+            pattern = re.compile(r"^from \.\.viewsets import (?P<items>.+)$", re.MULTILINE)
+            match = pattern.search(content)
+            if match:
+                items = [item.strip() for item in match.group("items").split(",")]
+                if viewset_name not in items:
+                    items.append(viewset_name)
+                    replacement = f"from ..viewsets import {', '.join(items)}"
+                    content = pattern.sub(replacement, content, count=1)
+        else:
+            anchor = "from rest_framework.routers import DefaultRouter\n"
+            import_line = f"from ..viewsets import {viewset_name}\n"
+            if anchor in content:
+                content = content.replace(anchor, anchor + "\n" + import_line, 1)
+            else:
+                content = import_line + "\n" + content
+
+        # Insert registration before urlpatterns assignment when possible.
+        marker = "urlpatterns = router.urls"
+        if marker in content:
+            content = content.replace(marker, register_line + "\n\n" + marker, 1)
+        elif "router = DefaultRouter()" in content:
+            content = content.replace("router = DefaultRouter()", "router = DefaultRouter()\n" + register_line, 1)
+        else:
+            raise CommandError("api/urls.py does not define a DefaultRouter; cannot append route safely.")
+
+        urls_file.write_text(content)
