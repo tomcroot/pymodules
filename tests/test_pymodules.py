@@ -252,6 +252,10 @@ class TestModuleRegistry:
             "Core": ["route-core"],
         }
 
+    def test_extension_facade_add_many_accepts_iterable(self, registry):
+        registry.add_many("routes", (route for route in ["route-a", "route-b"]), module="Blog")
+        assert registry.extensions("routes") == ["route-a", "route-b"]
+
     def test_scan_can_include_entry_points_for_typed_modules(self, modules_dir):
         registry = ModuleRegistry(
             modules_path=modules_dir,
@@ -304,6 +308,39 @@ class TestModuleRegistry:
             return_value=[SimpleNamespace(name="Billing", value="fakepkg.BillingModule")],
         ), pytest.raises(RuntimeError, match="Duplicate module key"):
             registry.scan()
+
+    def test_scan_entry_points_supports_module_attr_class_path(self, modules_dir):
+        registry = ModuleRegistry(
+            modules_path=modules_dir,
+            scan_on_init=False,
+            include_entry_points=True,
+        )
+
+        calls: list[str] = []
+
+        class BillingModule(BaseModule):
+            meta = ModuleMeta(name="Billing", key="billing", version="1.0.0")
+
+            def register(self, reg):
+                calls.append("register")
+                reg.add("routes", "billing-route", module="Billing")
+
+            def boot(self, app=None):
+                calls.append("boot")
+
+        with patch(
+            "pymodules.registry.ModuleRegistry._iter_module_entry_points",
+            return_value=[SimpleNamespace(name="Billing", value="fakepkg:BillingModule")],
+        ), patch(
+            "pymodules.registry.importlib.import_module",
+            return_value=SimpleNamespace(BillingModule=BillingModule),
+        ):
+            registry.scan()
+            registry.boot()
+
+        assert registry.exists("Billing")
+        assert calls == ["register", "boot"]
+        assert registry.extensions("routes") == ["billing-route"]
 
     def test_discovery_prefer_last_allows_entry_point_override(self, modules_dir):
         billing_dir = modules_dir / "Billing"
@@ -628,6 +665,20 @@ class TestLegacyCompatibility:
 
         assert isinstance(wrapped, LegacyProviderAdapter)
 
+    def test_load_legacy_provider_error_uses_load_import_wording(self, registry):
+        mod_dir = registry.modules_root / "Blog"
+        mod_dir.mkdir()
+        (mod_dir / "__init__.py").write_text("")
+        (mod_dir / "module.json").write_text(json.dumps({"name": "Blog", "enabled": True}))
+        registry.scan()
+        module = registry.find("Blog")
+
+        with patch(
+            "pymodules.compatibility.importlib.import_module",
+            side_effect=ImportError("no module"),
+        ), pytest.raises(RuntimeError, match="Failed to load/import provider"):
+            load_legacy_provider("fakepkg.MissingProvider", module)
+
 
 class TestExtensionRegistry:
     def test_add_add_many_and_get_by_module(self):
@@ -639,6 +690,11 @@ class TestExtensionRegistry:
         assert ext.get("policies") == ["PolicyA", "PolicyB", "PolicyC", "PolicyCore"]
         assert ext.get_by_module("policies", "Blog") == ["PolicyA", "PolicyB", "PolicyC"]
         assert ext.get_by_module("policies", "Missing") == []
+
+    def test_add_many_accepts_iterable(self):
+        ext = ExtensionRegistry()
+        ext.add_many("policies", (value for value in ["PolicyA", "PolicyB"]), module="Blog")
+        assert ext.get("policies") == ["PolicyA", "PolicyB"]
 
 
 class TestContracts:

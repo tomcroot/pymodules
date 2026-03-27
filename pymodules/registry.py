@@ -8,7 +8,7 @@ import importlib
 from importlib import metadata
 import sys
 from pathlib import Path
-from typing import Any, Callable, Iterator, Literal
+from typing import Any, Callable, Iterable, Iterator, Literal
 
 from .compatibility import load_legacy_provider
 from .contracts import BaseModule
@@ -277,7 +277,11 @@ class ModuleRegistry:
                 f"Module {module.name!r} does not declare a module_class for typed loading."
             )
         try:
-            mod_path, cls_name = module_class.rsplit(".", 1)
+            # Support both entry-point style (`module:attr`) and dotted paths.
+            if ":" in module_class:
+                mod_path, _, cls_name = module_class.partition(":")
+            else:
+                mod_path, cls_name = module_class.rsplit(".", 1)
             imported = importlib.import_module(mod_path)
             cls = getattr(imported, cls_name)
             instance = cls()
@@ -309,7 +313,7 @@ class ModuleRegistry:
         """Add a single extension value contributed by a module."""
         self._extensions.add(point, value, module=module)
 
-    def add_many(self, point: str, values: list[Any], *, module: str) -> None:
+    def add_many(self, point: str, values: Iterable[Any], *, module: str) -> None:
         """Add multiple extension values contributed by a module."""
         self._extensions.add_many(point, values, module=module)
 

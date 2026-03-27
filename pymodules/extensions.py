@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Any
+from typing import Any, Iterable
 
 
 class ExtensionRegistry:
@@ -15,7 +15,13 @@ class ExtensionRegistry:
         module_values = self._data[extension_point].setdefault(module, [])
         module_values.append(value)
 
-    def add_many(self, extension_point: str, values: list[Any], *, module: str) -> None:
+    def add_many(
+        self,
+        extension_point: str,
+        values: Iterable[Any],
+        *,
+        module: str,
+    ) -> None:
         module_values = self._data[extension_point].setdefault(module, [])
         module_values.extend(values)
 

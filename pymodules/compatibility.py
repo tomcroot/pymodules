@@ -45,6 +45,6 @@ def load_legacy_provider(
         return LegacyProviderAdapter(provider)
     except Exception as exc:  # noqa: BLE001
         raise RuntimeError(
-            f"Failed to boot provider {provider_path!r} "
+            f"Failed to load/import provider {provider_path!r} "
             f"for module {module.name!r}: {exc}"
         ) from exc
