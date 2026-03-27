@@ -5,7 +5,7 @@
 [![Version](https://img.shields.io/badge/version-0.2.0-blue)](https://github.com/tomcroot/pymodules)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Status](https://img.shields.io/badge/status-alpha-orange)](https://github.com/tomcroot/pymodules)
+[![Status](https://img.shields.io/badge/status-active%20development-yellow)](https://github.com/tomcroot/pymodules)
 
 `pymodules` lets you split large Python applications into self-contained, independently toggleable **modules** — each with its own models, views, routes, config, migrations, service providers, and tests. It works with any Python project and ships with first-class support for **Django**, **Flask**, and **FastAPI**.
 
