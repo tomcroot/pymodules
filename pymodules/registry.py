@@ -5,10 +5,14 @@ This is the central object that applications interact with.
 from __future__ import annotations
 
 import importlib
+from importlib import metadata
 import sys
 from pathlib import Path
-from typing import Any, Callable, Iterator, Optional
+from typing import Any, Callable, Iterable, Iterator, Literal
 
+from .compatibility import load_legacy_provider
+from .contracts import BaseModule
+from .extensions import ExtensionRegistry
 from .module import Module
 from .exceptions import ModuleDependencyError, ModuleNotFoundError
 
@@ -35,6 +39,15 @@ class ModuleRegistry:
         INSTALLED_APPS += registry.installed_apps()
         MODULE_REGISTRY = registry
 
+    v2-compatible discovery controls::
+
+        registry = ModuleRegistry(
+            modules_path="modules",
+            include_entry_points=True,
+            discovery_order=("filesystem", "entry_points"),
+            duplicate_policy="error",
+        )
+
     """
 
     def __init__(
@@ -42,11 +55,36 @@ class ModuleRegistry:
         modules_path: str | Path = "modules",
         *,
         scan_on_init: bool = True,
+        include_entry_points: bool = False,
+        entry_point_group: str = "pymodules.modules",
+        discovery_order: tuple[str, ...] | None = None,
+        duplicate_policy: Literal["error", "prefer-first", "prefer-last"] = "error",
     ) -> None:
         self.modules_root = Path(modules_path).resolve()
         self._modules: dict[str, Module] = {}
+        self._typed_modules: dict[str, BaseModule] = {}
+        self._extensions = ExtensionRegistry()
+        self._boot_plan: list[tuple[Module, list[Any]]] = []
+        self._registered = False
         self._booted = False
         self._boot_hooks: list[Callable[[Module], None]] = []
+        self._include_entry_points = include_entry_points
+        self._entry_point_group = entry_point_group
+        if discovery_order is None:
+            self._discovery_order = ("filesystem", "entry_points")
+        else:
+            self._discovery_order = discovery_order
+        self._duplicate_policy = duplicate_policy
+
+        unknown = set(self._discovery_order) - {"filesystem", "entry_points"}
+        if unknown:
+            raise ValueError(
+                f"Unsupported discovery sources in discovery_order: {sorted(unknown)!r}"
+            )
+        if self._duplicate_policy not in {"error", "prefer-first", "prefer-last"}:
+            raise ValueError(
+                "duplicate_policy must be one of: 'error', 'prefer-first', 'prefer-last'"
+            )
 
         if scan_on_init:
             self.scan()
@@ -56,19 +94,163 @@ class ModuleRegistry:
     # ------------------------------------------------------------------
 
     def scan(self) -> None:
-        """Scan the modules directory and register all found modules."""
+        """Scan all configured discovery sources and register found modules."""
         self._modules.clear()
+        self._typed_modules = {}
+        self._extensions = ExtensionRegistry()
+        self._boot_plan = []
+        self._registered = False
+        self._booted = False
+        for source in self._discovery_order:
+            if source == "filesystem":
+                self._scan_filesystem_modules()
+            elif source == "entry_points" and self._include_entry_points:
+                self.scan_entry_points()
+
+    def _scan_filesystem_modules(self) -> None:
+        """Discover modules from the local modules directory."""
         if not self.modules_root.exists():
             return
-
         for entry in sorted(self.modules_root.iterdir()):
             if entry.is_dir() and not entry.name.startswith((".", "_")):
                 module = Module(name=entry.name, path=entry, registry=self)
-                self._modules[entry.name] = module
+                self._register_discovered_module(module, source="filesystem")
+
+    def scan_entry_points(self) -> None:
+        """Discover typed modules exposed through Python entry points.
+
+        Entry-point modules are represented as in-memory Module instances with
+        manifest defaults and a required `module_class` value.
+        """
+        for entry_point in self._iter_module_entry_points():
+            module_name = entry_point.name
+            module = Module(
+                name=module_name,
+                path=self.modules_root / module_name,
+                registry=self,
+            )
+            module._manifest = {
+                "name": module_name,
+                "enabled": True,
+                "module_class": entry_point.value,
+                "providers": [],
+                "requires": [],
+            }
+            self._register_discovered_module(module, source="entry_points")
+
+    def _register_discovered_module(self, module: Module, *, source: str) -> None:
+        """Register one discovered module using the configured duplicate policy."""
+        existing = self._modules.get(module.name)
+        if existing is None:
+            self._modules[module.name] = module
+            return
+
+        if self._duplicate_policy == "error":
+            raise RuntimeError(
+                f"Duplicate module key {module.name!r} found while scanning {source!r}."
+            )
+        if self._duplicate_policy == "prefer-first":
+            return
+
+        self._modules[module.name] = module
+
+    def _iter_module_entry_points(self) -> list[Any]:
+        """Return entry points configured for pymodules module discovery."""
+        points = metadata.entry_points()
+        if hasattr(points, "select"):
+            return list(points.select(group=self._entry_point_group))
+        return list(points.get(self._entry_point_group, []))
 
     # ------------------------------------------------------------------
     # Boot
     # ------------------------------------------------------------------
+
+    def discover(self) -> None:
+        """v2 lifecycle alias for scan()."""
+        self.scan()
+
+    def resolve(self) -> list[str]:
+        """Validate dependency ordering and return resolved module names."""
+        return [module.name for module in self.all_enabled_ordered()]
+
+    def instantiate(self) -> None:
+        """Instantiate all configured typed modules for enabled modules."""
+        loaded: dict[str, BaseModule] = {}
+        for module in self.all_enabled_ordered():
+            if not module.module_class:
+                continue
+            loaded[module.name] = self._instantiate_typed_module(module)
+        self._typed_modules = loaded
+
+    def register_all(self) -> None:
+        """Register providers for all enabled modules without booting them."""
+        if self._registered:
+            return
+
+        parent = str(self.modules_root.parent)
+        if parent not in sys.path:
+            sys.path.insert(0, parent)
+
+        boot_plan: list[tuple[Module, list[Any]]] = []
+        for module in self.all_enabled_ordered():
+            providers = self._instantiate_providers(module)
+            for provider in providers:
+                provider.register()
+            boot_plan.append((module, providers))
+
+        if not self._typed_modules:
+            self.instantiate()
+        for module in self.all_enabled_ordered():
+            typed = self._typed_modules.get(module.name)
+            if typed is not None:
+                typed.register(self)
+
+        self._boot_plan = boot_plan
+        self._registered = True
+
+    def boot_all(self, app: Any | None = None) -> None:  # noqa: ARG002
+        """Boot registered providers and execute module boot hooks."""
+        if self._booted:
+            return
+
+        if not self._registered:
+            self.register_all()
+
+        for module in self.all_enabled_ordered():
+            typed = self._typed_modules.get(module.name)
+            if typed is not None:
+                typed.boot(app=app)
+
+        for _, providers in self._boot_plan:
+            for provider in providers:
+                provider.boot()
+
+        for module, _ in self._boot_plan:
+            for hook in self._boot_hooks:
+                hook(module)
+
+        self._booted = True
+
+    def shutdown_all(self, app: Any | None = None) -> None:  # noqa: ARG002
+        """Shutdown providers in reverse dependency order when supported."""
+        if not self._registered:
+            return
+
+        for module in reversed(self.all_enabled_ordered()):
+            typed = self._typed_modules.get(module.name)
+            if typed is not None:
+                typed.shutdown(app=app)
+
+        for _, providers in reversed(self._boot_plan):
+            for provider in reversed(providers):
+                shutdown = getattr(provider, "shutdown", None)
+                if callable(shutdown):
+                    shutdown()
+
+        self._typed_modules = {}
+        self._boot_plan = []
+        self._registered = False
+        self._booted = False
 
     def boot(self) -> None:
         """
@@ -77,50 +259,44 @@ class ModuleRegistry:
         - Imports and calls each module's service providers.
         - Invokes registered boot hooks.
         """
-        if self._booted:
-            return
-
-        # Ensure the parent of modules_root is on sys.path so that
-        # `import modules.Blog.models` works.
-        parent = str(self.modules_root.parent)
-        if parent not in sys.path:
-            sys.path.insert(0, parent)
-
-        boot_plan: list[tuple[Module, list[Any]]] = []
-
-        # 1) Register every provider for every enabled module.
-        for module in self.all_enabled_ordered():
-            providers = self._instantiate_providers(module)
-            for provider in providers:
-                provider.register()
-            boot_plan.append((module, providers))
-
-        # 2) Boot providers after registration has completed globally.
-        for _, providers in boot_plan:
-            for provider in providers:
-                provider.boot()
-
-        # 3) Run module boot hooks.
-        for module, _ in boot_plan:
-            for hook in self._boot_hooks:
-                hook(module)
-
-        self._booted = True
+        self.register_all()
+        self.boot_all()
 
     def _instantiate_providers(self, module: Module) -> list[Any]:
         providers: list[Any] = []
         for provider_path in module.providers:
-            try:
-                parts = provider_path.rsplit(".", 1)
-                mod = importlib.import_module(parts[0])
-                provider_cls = getattr(mod, parts[1])
-                providers.append(provider_cls(module, app=self._provider_app()))
-            except Exception as exc:  # noqa: BLE001
-                raise RuntimeError(
-                    f"Failed to boot provider {provider_path!r} "
-                    f"for module {module.name!r}: {exc}"
-                ) from exc
+            providers.append(
+                load_legacy_provider(provider_path, module, app=self._provider_app())
+            )
         return providers
+
+    def _instantiate_typed_module(self, module: Module) -> BaseModule:
+        module_class = module.module_class
+        if not module_class:
+            raise RuntimeError(
+                f"Module {module.name!r} does not declare a module_class for typed loading."
+            )
+        try:
+            # Support both entry-point style (`module:attr`) and dotted paths.
+            if ":" in module_class:
+                mod_path, _, cls_name = module_class.partition(":")
+            else:
+                mod_path, cls_name = module_class.rsplit(".", 1)
+            imported = importlib.import_module(mod_path)
+            cls = getattr(imported, cls_name)
+            instance = cls()
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeError(
+                f"Failed to instantiate typed module {module_class!r} "
+                f"for module {module.name!r}: {exc}"
+            ) from exc
+
+        if not isinstance(instance, BaseModule):
+            raise RuntimeError(
+                f"Typed module {module_class!r} for module {module.name!r} "
+                "must inherit from BaseModule."
+            )
+        return instance
 
     def _provider_app(self) -> Any | None:
         """
@@ -128,6 +304,26 @@ class ModuleRegistry:
         Framework-specific registries can override this.
         """
         return None
+
+    # ------------------------------------------------------------------
+    # Extensions
+    # ------------------------------------------------------------------
+
+    def add(self, point: str, value: Any, *, module: str) -> None:
+        """Add a single extension value contributed by a module."""
+        self._extensions.add(point, value, module=module)
+
+    def add_many(self, point: str, values: Iterable[Any], *, module: str) -> None:
+        """Add multiple extension values contributed by a module."""
+        self._extensions.add_many(point, values, module=module)
+
+    def extensions(self, point: str) -> list[Any]:
+        """Get all registered values for one extension point."""
+        return self._extensions.get(point)
+
+    def extension_map(self, point: str) -> dict[str, list[Any]]:
+        """Get extension values grouped by module for one point."""
+        return self._extensions.map(point)
 
     def on_boot(self, fn: Callable[[Module], None]) -> Callable[[Module], None]:
         """Register a hook called for every enabled module during boot."""

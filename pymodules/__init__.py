@@ -26,6 +26,8 @@ FastAPI::
 """
 
 from .detector import FrameworkInfo, detect_framework
+from .compatibility import LegacyProviderAdapter, load_legacy_provider
+from .contracts import BaseModule, ModuleMeta, RegistryProtocol
 from .exceptions import (
     ModuleAlreadyExistsError,
     ModuleDependencyError,
@@ -34,13 +36,18 @@ from .exceptions import (
     PyModulesError,
 )
 from .generator import ModuleGenerator
+from .extensions import ExtensionRegistry
 from .module import Module
 from .provider import ServiceProvider
 from .registry import ModuleRegistry
 
 __all__ = [
     "FrameworkInfo",
+    "BaseModule",
+    "ExtensionRegistry",
+    "LegacyProviderAdapter",
     "Module",
+    "ModuleMeta",
     "ModuleAlreadyExistsError",
     "ModuleDependencyError",
     "ModuleDisabledError",
@@ -49,7 +56,9 @@ __all__ = [
     "ModuleRegistry",
     "PyModulesError",
     "ServiceProvider",
+    "RegistryProtocol",
     "detect_framework",
+    "load_legacy_provider",
 ]
 
 __version__ = "0.1.0"

@@ -116,6 +116,12 @@ class Module:
         return self.manifest.get("providers", [])
 
     @property
+    def module_class(self) -> str | None:
+        """Optional dotted import path for a v2 BaseModule implementation."""
+        value = self.manifest.get("module_class")
+        return value if isinstance(value, str) and value else None
+
+    @property
     def requires(self) -> list[str]:
         """List of module names this module depends on."""
         return self.manifest.get("requires", [])
