@@ -15,6 +15,9 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from pymodules import ModuleRegistry, ModuleGenerator, Module
+from pymodules.compatibility import LegacyProviderAdapter, load_legacy_provider
+from pymodules.contracts import BaseModule, ModuleMeta
+from pymodules.extensions import ExtensionRegistry
 from pymodules.exceptions import (
     ModuleAlreadyExistsError,
     ModuleDependencyError,
@@ -128,7 +131,7 @@ class TestModuleRegistry:
                 calls.append(("boot", self.module.name))
 
         with patch(
-            "pymodules.registry.importlib.import_module",
+            "pymodules.compatibility.importlib.import_module",
             return_value=SimpleNamespace(FakeProvider=FakeProvider),
         ):
             registry.boot()
@@ -170,6 +173,212 @@ class TestModuleRegistry:
 
         with pytest.raises(ModuleDependencyError):
             registry.all_enabled_ordered()
+
+    def test_discover_alias_scans_modules(self, modules_dir):
+        blog_dir = modules_dir / "Blog"
+        blog_dir.mkdir(parents=True)
+        (blog_dir / "__init__.py").write_text("")
+        (blog_dir / "module.json").write_text(json.dumps({"name": "Blog", "enabled": True}))
+
+        registry = ModuleRegistry(modules_path=modules_dir, scan_on_init=False)
+        assert registry.count() == 0
+
+        registry.discover()
+        assert registry.count() == 1
+
+    def test_resolve_returns_enabled_dependency_order(self, registry):
+        for name, requires in [
+            ("Core", []),
+            ("Billing", ["Core"]),
+        ]:
+            mod_dir = registry.modules_root / name
+            mod_dir.mkdir()
+            (mod_dir / "__init__.py").write_text("")
+            (mod_dir / "module.json").write_text(
+                json.dumps({"name": name, "enabled": True, "requires": requires})
+            )
+
+        registry.scan()
+        assert registry.resolve() == ["Core", "Billing"]
+
+    def test_shutdown_all_calls_provider_shutdown(self, registry):
+        mod_dir = registry.modules_root / "Blog"
+        mod_dir.mkdir()
+        (mod_dir / "__init__.py").write_text("")
+        (mod_dir / "module.json").write_text(
+            json.dumps(
+                {
+                    "name": "Blog",
+                    "enabled": True,
+                    "providers": ["fakepkg.FakeProvider"],
+                }
+            )
+        )
+        registry.scan()
+
+        calls: list[str] = []
+
+        class FakeProvider:
+            def __init__(self, module, app=None):
+                self.module = module
+
+            def register(self):
+                calls.append("register")
+
+            def boot(self):
+                calls.append("boot")
+
+            def shutdown(self):
+                calls.append("shutdown")
+
+        with patch(
+            "pymodules.compatibility.importlib.import_module",
+            return_value=SimpleNamespace(FakeProvider=FakeProvider),
+        ):
+            registry.boot()
+
+        registry.shutdown_all()
+
+        assert calls == ["register", "boot", "shutdown"]
+
+    def test_extension_facade_add_and_get(self, registry):
+        registry.add("routes", "route-a", module="Blog")
+        registry.add_many("routes", ["route-b", "route-c"], module="Blog")
+        registry.add("routes", "route-core", module="Core")
+
+        assert registry.extensions("routes") == ["route-a", "route-b", "route-c", "route-core"]
+        assert registry.extension_map("routes") == {
+            "Blog": ["route-a", "route-b", "route-c"],
+            "Core": ["route-core"],
+        }
+
+    def test_scan_can_include_entry_points_for_typed_modules(self, modules_dir):
+        registry = ModuleRegistry(
+            modules_path=modules_dir,
+            scan_on_init=False,
+            include_entry_points=True,
+        )
+
+        calls: list[str] = []
+
+        class BillingModule(BaseModule):
+            meta = ModuleMeta(name="Billing", key="billing", version="1.0.0")
+
+            def register(self, reg):
+                calls.append("register")
+                reg.add("routes", "billing-route", module="Billing")
+
+            def boot(self, app=None):
+                calls.append("boot")
+
+        with patch(
+            "pymodules.registry.ModuleRegistry._iter_module_entry_points",
+            return_value=[SimpleNamespace(name="Billing", value="fakepkg.BillingModule")],
+        ), patch(
+            "pymodules.registry.importlib.import_module",
+            return_value=SimpleNamespace(BillingModule=BillingModule),
+        ):
+            registry.scan()
+            registry.boot()
+
+        assert registry.exists("Billing")
+        assert calls == ["register", "boot"]
+        assert registry.extensions("routes") == ["billing-route"]
+
+    def test_scan_entry_points_raises_on_duplicate_filesystem_key(self, modules_dir):
+        billing_dir = modules_dir / "Billing"
+        billing_dir.mkdir(parents=True)
+        (billing_dir / "__init__.py").write_text("")
+        (billing_dir / "module.json").write_text(
+            json.dumps({"name": "Billing", "enabled": True})
+        )
+
+        registry = ModuleRegistry(
+            modules_path=modules_dir,
+            scan_on_init=False,
+            include_entry_points=True,
+        )
+
+        with patch(
+            "pymodules.registry.ModuleRegistry._iter_module_entry_points",
+            return_value=[SimpleNamespace(name="Billing", value="fakepkg.BillingModule")],
+        ), pytest.raises(RuntimeError, match="Duplicate module key"):
+            registry.scan()
+
+    def test_discovery_prefer_last_allows_entry_point_override(self, modules_dir):
+        billing_dir = modules_dir / "Billing"
+        billing_dir.mkdir(parents=True)
+        (billing_dir / "__init__.py").write_text("")
+        (billing_dir / "module.json").write_text(
+            json.dumps({"name": "Billing", "enabled": True})
+        )
+
+        registry = ModuleRegistry(
+            modules_path=modules_dir,
+            scan_on_init=False,
+            include_entry_points=True,
+            discovery_order=("filesystem", "entry_points"),
+            duplicate_policy="prefer-last",
+        )
+
+        with patch(
+            "pymodules.registry.ModuleRegistry._iter_module_entry_points",
+            return_value=[SimpleNamespace(name="Billing", value="fakepkg.BillingModule")],
+        ):
+            registry.scan()
+
+        billing = registry.find("Billing")
+        assert billing.module_class == "fakepkg.BillingModule"
+
+    def test_discovery_prefer_first_keeps_filesystem_module(self, modules_dir):
+        billing_dir = modules_dir / "Billing"
+        billing_dir.mkdir(parents=True)
+        (billing_dir / "__init__.py").write_text("")
+        (billing_dir / "module.json").write_text(
+            json.dumps({"name": "Billing", "enabled": True})
+        )
+
+        registry = ModuleRegistry(
+            modules_path=modules_dir,
+            scan_on_init=False,
+            include_entry_points=True,
+            discovery_order=("filesystem", "entry_points"),
+            duplicate_policy="prefer-first",
+        )
+
+        with patch(
+            "pymodules.registry.ModuleRegistry._iter_module_entry_points",
+            return_value=[SimpleNamespace(name="Billing", value="fakepkg.BillingModule")],
+        ):
+            registry.scan()
+
+        billing = registry.find("Billing")
+        assert billing.module_class is None
+
+    def test_discovery_order_entry_points_then_filesystem_with_prefer_first(self, modules_dir):
+        billing_dir = modules_dir / "Billing"
+        billing_dir.mkdir(parents=True)
+        (billing_dir / "__init__.py").write_text("")
+        (billing_dir / "module.json").write_text(
+            json.dumps({"name": "Billing", "enabled": True})
+        )
+
+        registry = ModuleRegistry(
+            modules_path=modules_dir,
+            scan_on_init=False,
+            include_entry_points=True,
+            discovery_order=("entry_points", "filesystem"),
+            duplicate_policy="prefer-first",
+        )
+
+        with patch(
+            "pymodules.registry.ModuleRegistry._iter_module_entry_points",
+            return_value=[SimpleNamespace(name="Billing", value="fakepkg.BillingModule")],
+        ):
+            registry.scan()
+
+        billing = registry.find("Billing")
+        assert billing.module_class == "fakepkg.BillingModule"
 
 
 class TestDjangoModuleRegistry:
@@ -369,6 +578,124 @@ class TestDjangoModuleRegistry:
         registry = DjangoModuleRegistry(modules_path=modules_dir)
         with pytest.raises(ImproperlyConfigured, match="drf-access-policy"):
             registry.collect_policies()
+
+
+class TestLegacyCompatibility:
+    def test_legacy_provider_adapter_calls_register_boot_shutdown(self):
+        calls: list[str] = []
+
+        class FakeProvider:
+            def register(self):
+                calls.append("register")
+
+            def boot(self):
+                calls.append("boot")
+
+            def shutdown(self):
+                calls.append("shutdown")
+
+        adapter = LegacyProviderAdapter(FakeProvider())
+        adapter.register()
+        adapter.boot()
+        adapter.shutdown()
+
+        assert calls == ["register", "boot", "shutdown"]
+
+    def test_load_legacy_provider_wraps_imported_provider(self, registry):
+        mod_dir = registry.modules_root / "Blog"
+        mod_dir.mkdir()
+        (mod_dir / "__init__.py").write_text("")
+        (mod_dir / "module.json").write_text(json.dumps({"name": "Blog", "enabled": True}))
+        registry.scan()
+        module = registry.find("Blog")
+
+        class FakeProvider:
+            def __init__(self, module, app=None):
+                self.module = module
+                self.app = app
+
+            def register(self):
+                return None
+
+            def boot(self):
+                return None
+
+        with patch(
+            "pymodules.compatibility.importlib.import_module",
+            return_value=SimpleNamespace(FakeProvider=FakeProvider),
+        ):
+            wrapped = load_legacy_provider("fakepkg.FakeProvider", module, app="app")
+
+        assert isinstance(wrapped, LegacyProviderAdapter)
+
+
+class TestExtensionRegistry:
+    def test_add_add_many_and_get_by_module(self):
+        ext = ExtensionRegistry()
+        ext.add("policies", "PolicyA", module="Blog")
+        ext.add_many("policies", ["PolicyB", "PolicyC"], module="Blog")
+        ext.add("policies", "PolicyCore", module="Core")
+
+        assert ext.get("policies") == ["PolicyA", "PolicyB", "PolicyC", "PolicyCore"]
+        assert ext.get_by_module("policies", "Blog") == ["PolicyA", "PolicyB", "PolicyC"]
+        assert ext.get_by_module("policies", "Missing") == []
+
+
+class TestContracts:
+    def test_module_meta_and_base_module_healthcheck(self):
+        class DemoModule(BaseModule):
+            meta = ModuleMeta(name="Demo", key="demo", version="1.0.0")
+
+        module = DemoModule()
+
+        assert module.meta.key == "demo"
+        assert module.healthcheck() == {"ok": True}
+
+
+class TestTypedModuleLifecycle:
+    def test_module_class_register_boot_shutdown_and_extensions(self, registry):
+        mod_dir = registry.modules_root / "Blog"
+        mod_dir.mkdir()
+        (mod_dir / "__init__.py").write_text("")
+        (mod_dir / "module.json").write_text(
+            json.dumps(
+                {
+                    "name": "Blog",
+                    "enabled": True,
+                    "module_class": "fakepkg.BlogModule",
+                }
+            )
+        )
+        registry.scan()
+
+        calls: list[str] = []
+
+        class BlogModule(BaseModule):
+            meta = ModuleMeta(name="Blog", key="blog", version="1.0.0")
+
+            def register(self, reg):
+                calls.append("register")
+                reg.add("routes", "blog-route", module="Blog")
+
+            def boot(self, app=None):
+                calls.append("boot")
+
+            def shutdown(self, app=None):
+                calls.append("shutdown")
+
+        with patch(
+            "pymodules.registry.importlib.import_module",
+            return_value=SimpleNamespace(BlogModule=BlogModule),
+        ):
+            registry.register_all()
+            assert calls == ["register"]
+            assert registry.extensions("routes") == ["blog-route"]
+
+            registry.boot_all()
+            assert calls == ["register", "boot"]
+
+            registry.shutdown_all()
+            assert calls == ["register", "boot", "shutdown"]
 
 
 # ------------------------------------------------------------------
