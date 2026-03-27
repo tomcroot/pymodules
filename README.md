@@ -15,6 +15,7 @@
 
 - [Why pymodules?](#why-pymodules)
 - [Version 0.1.0](#version-010)
+- [V2 Migration Guide (Preview)](#v2-migration-guide-preview)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
 - [Module Structure](#module-structure)
@@ -85,6 +86,81 @@ This is the **first public release** of pymodules. It is production-usable for g
 - Module-level URL routing for all three frameworks
 - Module-level migrations for Django
 - Asset publishing system
+
+---
+
+## V2 Migration Guide (Preview)
+
+v2 features are being added in a backward-compatible way.
+
+If your project already uses service providers, you can keep using it exactly as-is.
+You only need to change things when you want to adopt new v2 features.
+
+Quick summary:
+- no immediate rewrite required
+- current module.json + providers setup still works
+- typed modules and entry points are optional
+
+### 1. v1 compatibility remains enabled
+
+Current provider-based modules continue to work without changes:
+- modules are discovered from your modules folder
+- module.json providers are loaded
+- providers still run in register then boot order
+
+### 2. Typed modules are opt-in
+
+When you are ready, migrate one module at a time by adding module_class to module.json:
+
+```json
+{
+    "name": "Billing",
+    "enabled": true,
+    "module_class": "modules.Billing.runtime.BillingModule",
+    "providers": []
+}
+```
+
+That class should inherit from BaseModule and can register extension data through the registry.
+
+### 3. Entry-point discovery is opt-in
+
+By default, entry-point scanning is off so existing projects do not change behavior.
+
+```python
+from pymodules import ModuleRegistry
+
+registry = ModuleRegistry(
+    modules_path="modules",
+    include_entry_points=True,
+)
+```
+
+### 4. Discovery precedence is configurable
+
+If both filesystem modules and entry-point modules are enabled, you can control precedence and duplicate handling:
+
+```python
+registry = ModuleRegistry(
+    modules_path="modules",
+    include_entry_points=True,
+    discovery_order=("filesystem", "entry_points"),
+    duplicate_policy="error",  # "error" | "prefer-first" | "prefer-last"
+)
+```
+
+Recommended migration path:
+1. Start with defaults (include_entry_points=False).
+2. Migrate one module to module_class and validate behavior.
+3. Enable entry points only when packaging modules externally.
+4. Keep duplicate_policy="error" during migration so collisions fail fast.
+
+Common question: will this break my existing modules?
+- Not by default.
+- Breakage usually happens only if you opt into new discovery modes and have duplicate module keys.
+- Keeping duplicate_policy="error" prevents silent overrides.
+
+For architecture details, see [docs/v2_spec.md](docs/v2_spec.md).
 
 ---
 
@@ -858,19 +934,46 @@ detected_framework = "django"
 
 ## API Reference
 
+Terminology used in this section:
+- CLI commands: terminal commands such as `pymodules make Blog`.
+- Python methods: code calls such as `registry.boot_all()`.
+
 ### `ModuleRegistry`
 
 ```python
 from pymodules import ModuleRegistry
 
 registry = ModuleRegistry(
-    modules_path="modules",   # str or Path
-    scan_on_init=True,        # auto-scan on construction
+    modules_path="modules",                    # local module folder
+    scan_on_init=True,                          # call scan() during __init__
+    include_entry_points=False,                 # include installed package modules
+    entry_point_group="pymodules.modules",    # entry-point group to scan
+    discovery_order=("filesystem", "entry_points"),  # precedence order
+    duplicate_policy="error",                 # "error" | "prefer-first" | "prefer-last"
 )
+```
+
+Typical lifecycle calls:
+
+```python
+registry.discover()      # scan sources
+registry.resolve()       # validate dependency order
+registry.instantiate()   # create typed modules (if any)
+registry.register_all()  # run register phase
+registry.boot_all()      # run boot phase
+
+# Legacy shortcut still supported:
+registry.boot()          # register_all + boot_all
 ```
 
 | Method / Property | Returns | Description |
 |---|---|---|
+| `registry.discover()` | `None` | v2 alias for `scan()` |
+| `registry.resolve()` | `list[str]` | Dependency-ordered enabled module names |
+| `registry.instantiate()` | `None` | Instantiate typed modules from `module_class` |
+| `registry.register_all()` | `None` | Register providers + typed modules |
+| `registry.boot_all()` | `None` | Boot typed modules + providers |
+| `registry.shutdown_all()` | `None` | Shutdown typed modules + providers (reverse order) |
 | `registry.all()` | `list[Module]` | All modules (enabled + disabled) |
 | `registry.all_enabled()` | `list[Module]` | Only enabled modules |
 | `registry.all_disabled()` | `list[Module]` | Only disabled modules |
@@ -881,10 +984,64 @@ registry = ModuleRegistry(
 | `registry.disable(name)` | `None` | Disable a module (persists to disk) |
 | `registry.boot()` | `None` | Boot all enabled modules |
 | `registry.scan()` | `None` | Re-scan the modules directory |
+| `registry.scan_entry_points()` | `None` | Scan package entry points (when enabled) |
+| `registry.add(point, value, module=...)` | `None` | Add one extension value |
+| `registry.add_many(point, values, module=...)` | `None` | Add multiple extension values |
+| `registry.extensions(point)` | `list[Any]` | Get values for one extension point |
+| `registry.extension_map(point)` | `dict[str, list[Any]]` | Get values grouped by module |
 | `registry.module_path(name, *parts)` | `Path` | Resolve path within a module |
 | `registry.on_boot(fn)` | `fn` | Register a boot hook (decorator) |
 | `"Blog" in registry` | `bool` | Membership test |
 | `for m in registry` | — | Iteration |
+
+Discovery options explained:
+- `include_entry_points=False`: safest default; no package-discovered modules.
+- `discovery_order=("filesystem", "entry_points")`: source precedence.
+- `duplicate_policy="error"`: fail fast on duplicate module keys.
+
+### End-to-end: v1 app to v2 app (incremental)
+
+Start with existing v1 behavior:
+
+```python
+from pymodules import ModuleRegistry
+
+registry = ModuleRegistry(modules_path="modules")
+registry.boot()  # existing provider-based modules keep working
+```
+
+Then migrate one module to typed mode:
+
+```json
+{
+    "name": "Billing",
+    "enabled": true,
+    "module_class": "modules.Billing.runtime.BillingModule",
+    "providers": []
+}
+```
+
+Use explicit staged lifecycle if you want tighter control:
+
+```python
+registry = ModuleRegistry(modules_path="modules")
+registry.discover()
+registry.resolve()
+registry.register_all()
+registry.boot_all()
+```
+
+Enable package-based modules later, when needed:
+
+```python
+registry = ModuleRegistry(
+    modules_path="modules",
+    include_entry_points=True,
+    discovery_order=("filesystem", "entry_points"),
+    duplicate_policy="error",
+)
+registry.boot()
+```
 
 ### `Module`
 
@@ -900,9 +1057,34 @@ registry = ModuleRegistry(
 | `module.description` | `str` | Description from manifest |
 | `module.author` | `str` | Author from manifest |
 | `module.providers` | `list[str]` | Provider dotted paths |
+| `module.module_class` | `str \| None` | Optional typed module class path |
 | `module.manifest` | `dict` | Raw manifest dict |
 | `module.has_file(*parts)` | `bool` | Check if file exists inside module |
 | `module.import_submodule(path)` | `module` | Import a submodule by relative dotted path |
+
+### Typed Module Contracts
+
+```python
+from pymodules import BaseModule, ModuleMeta
+
+class BillingModule(BaseModule):
+    meta = ModuleMeta(name="Billing", key="billing", version="1.0.0")
+
+    def register(self, registry):
+        registry.add("routes", "billing-route", module="Billing")
+
+    def boot(self, app=None):
+        pass
+
+    def shutdown(self, app=None):
+        pass
+```
+
+### v1 Compatibility Helpers
+
+These are available for migration and advanced integration:
+- `LegacyProviderAdapter`
+- `load_legacy_provider(...)`
 
 ### `DjangoModuleRegistry`
 
