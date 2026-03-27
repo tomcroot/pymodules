@@ -2,7 +2,7 @@
 
 > Modular application architecture for Python — inspired by Laravel Modules, built for the Python ecosystem.
 
-[![Version](https://img.shields.io/badge/version-0.1.0-blue)](https://github.com/tomcroot/pymodules)
+[![Version](https://img.shields.io/badge/version-0.2.0-blue)](https://github.com/tomcroot/pymodules)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Status](https://img.shields.io/badge/status-alpha-orange)](https://github.com/tomcroot/pymodules)
@@ -14,8 +14,8 @@
 ## Table of Contents
 
 - [Why pymodules?](#why-pymodules)
-- [Version 0.1.0](#version-010)
-- [V2 Migration Guide (Preview)](#v2-migration-guide-preview)
+- [Version 0.2.0](#version-020)
+- [V2 Migration Guide](#v2-migration-guide)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
 - [Module Structure](#module-structure)
@@ -67,11 +67,11 @@ This is the Python equivalent of [nWidart/laravel-modules](https://github.com/nW
 
 ---
 
-## Version 0.1.0
+## Version 0.2.0
 
-This is the **first public release** of pymodules. It is production-usable for greenfield projects and stable enough for evaluation in existing projects.
+This release includes the v2-compatible runtime foundation while preserving backward compatibility for v1 provider-based modules.
 
-**What 0.1.0 delivers:**
+**What 0.2.0 delivers:**
 
 - Framework-agnostic core (`ModuleRegistry`, `Module`, `ServiceProvider`)
 - Auto-detection of Django, FastAPI, Flask from your environment
@@ -89,7 +89,7 @@ This is the **first public release** of pymodules. It is production-usable for g
 
 ---
 
-## V2 Migration Guide (Preview)
+## V2 Migration Guide
 
 v2 features are being added in a backward-compatible way.
 
@@ -200,7 +200,7 @@ pip install "pytmodules[django] @ git+https://github.com/tomcroot/pymodules.git"
 Releases are automated with GitHub Actions:
 
 - [.github/workflows/release.yml](.github/workflows/release.yml) (manual trigger) bumps version files, creates/pushes a `v*` tag, and creates the GitHub Release.
-- [.github/workflows/publish.yml](.github/workflows/publish.yml) runs on tag push (`v*`), builds artifacts, runs `twine check`, and publishes to PyPI via trusted publishing.
+- [.github/workflows/publish.yml](.github/workflows/publish.yml) runs automatically after the Release workflow succeeds (`workflow_run`), builds artifacts, runs `twine check`, and publishes to PyPI via trusted publishing.
 
 Local validation before cutting a release:
 
@@ -214,7 +214,7 @@ Release flow:
 1. Ensure `CHANGELOG.md` has release-ready notes under `[Unreleased]`.
 2. Run the **Release** workflow from GitHub Actions (`workflow_dispatch`) and provide the version (for example, `0.1.1`).
 3. The workflow updates version metadata, commits, tags (`v0.1.1`), and creates the GitHub Release.
-4. Tag push automatically triggers the publish workflow, which builds and uploads to PyPI.
+4. The Publish workflow is triggered by the successful Release workflow (`workflow_run`), then builds and uploads to PyPI.
 
 The publish workflow is configured for PyPI trusted publishing. Keep the GitHub `pypi` environment and PyPI trusted publisher settings in sync if repository, workflow, or environment names change.
 

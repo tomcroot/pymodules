@@ -91,7 +91,7 @@ Project releases are automated through GitHub Actions.
 2. Run the **Release** workflow in `.github/workflows/release.yml` from the Actions tab.
 3. Provide the target version (for example, `0.1.1`) and optional prerelease flag.
 4. The workflow commits version updates, pushes tag `v<version>`, and creates a GitHub Release.
-5. The tag push triggers `.github/workflows/publish.yml`, which builds and publishes to PyPI.
+5. A successful Release run triggers `.github/workflows/publish.yml` via `workflow_run`, which builds and publishes to PyPI.
 
 ---
 

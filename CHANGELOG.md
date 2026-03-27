@@ -13,13 +13,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.0] - 2026-03-27
 
+### Added
+
+- v2 runtime foundation with typed module contracts: `ModuleMeta`, `BaseModule`, and `RegistryProtocol`.
+- Extension registry support via `ExtensionRegistry` and registry extension helpers (`add`, `add_many`, `extensions`, `extension_map`).
+- Backward-compatibility adapter layer for v1 providers: `LegacyProviderAdapter` and `load_legacy_provider(...)`.
+- Entry-point module discovery support (`include_entry_points`, `entry_point_group`) with configurable source precedence.
+- New lifecycle stages in `ModuleRegistry`: `discover()`, `resolve()`, `instantiate()`, `register_all()`, `boot_all()`, `shutdown_all()`.
+- v2 architecture specification in `docs/v2_spec.md`.
+
+### Changed
+
+- `ModuleRegistry.boot()` now uses explicit register then boot stage orchestration internally.
+- Discovery conflict handling is configurable with `duplicate_policy` (`error`, `prefer-first`, `prefer-last`).
+- Typed module loading accepts both `package.module:ClassName` and `package.module.ClassName` class-path formats.
+- `add_many` APIs now accept generic iterables for protocol compatibility.
+- Release/publish process now auto-chains through `workflow_run` after the Release workflow completes.
+
+### Fixed
+
+- Improved provider loading error messaging to distinguish import/load failures from boot-time failures.
+
 ---
 
 ## [0.1.2] - 2026-03-19
-
----
-
-## [0.1.2] - {placeholder}
 
 ### Changed
 
