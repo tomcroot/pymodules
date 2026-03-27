@@ -1,6 +1,6 @@
 # pymodules v2 Specification
 
-Status: Draft
+Status: Implemented foundation in v0.2.0; planned items remain for future versions
 Audience: Maintainers and contributors
 Scope: Core runtime, discovery, lifecycle, extension registry, and framework adapters
 
@@ -109,7 +109,7 @@ All other point names are allowed but treated as opaque data buckets by core.
 
 ## 3.4 ModuleRegistry v2 API
 
-Current implementation (in this PR):
+Current implementation (in v0.2.0):
 
 ```python
 class ModuleRegistry:
@@ -139,7 +139,7 @@ class ModuleRegistry:
     # events
     def on(self, event: str, listener: Any, *, module: str) -> None: ...
     def emit(self, event: str, payload: Any | None = None) -> None: ...
-  ```
+```
 
 Compatibility aliases for v1 users:
 - scan() -> discover()
